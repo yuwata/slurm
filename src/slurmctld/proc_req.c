@@ -192,6 +192,7 @@ inline static void  _slurm_rpc_dump_cache(slurm_msg_t * msg);
 inline static void  _update_cred_key(void);
 
 static void _update_clusters_grid_table(dbd_grid_table_msg_t* drtt_loc);
+static void _get_sicp_job_state_val(slurm_msg_t* msg);
 
 extern diag_stats_t slurmctld_diag_stats;
 
@@ -622,6 +623,44 @@ static void _throttle_fini(int *active_rpc_cnt)
 	slurm_mutex_unlock(&throttle_mutex);
 }
 
+static void _get_sicp_job_state_val(slurm_msg_t* msg) {
+	slurm_msg_t response_msg;
+	uint32_t sicp_jobid;
+	uint16_t sicp_job_state = (uint16_t)NO_VAL;
+	struct job_record* sicp_job_ptr;
+
+	if (!msg || !msg->data) {
+		info("Warning!  Did not receive proper message for SICP job "
+		     "state request.");
+		/*sicp_jobid = NO_VAL;*/  /* bogus value */
+		if (!msg)
+			info("Warning! Message received was garbage.");
+		else if ( !msg->data )
+			info("Warning! Message received's data was garbage.");
+	} else {
+		sicp_jobid  = *(uint32_t*)msg->data;
+
+		sicp_job_ptr = find_job_record(sicp_jobid);
+		if (sicp_job_ptr) {
+			sicp_job_state = sicp_job_ptr->job_state;
+		}
+
+		slurm_msg_t_init(&response_msg);
+
+		response_msg.flags            = msg->flags;
+		response_msg.protocol_version = msg->protocol_version;
+		response_msg.address          = msg->address;
+		response_msg.msg_type         = RESPONSE_SICP_JOB_STATE;
+		response_msg.data             = &sicp_job_state;
+
+		slurm_send_node_msg(msg->conn_fd, &response_msg);
+	}
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("%s--sicp_jobid: %u has state of %d", __FUNCTION__,
+			sicp_jobid, sicp_job_state);
+
+}
+
 /*
  * _fill_ctld_conf - make a copy of current slurm configuration
  *	this is done with locks set so the data can change at other times
@@ -702,6 +741,7 @@ static void _fill_ctld_conf(slurm_ctl_conf_t * conf_ptr)
 	conf_ptr->grid_clusters       = xstrdup(conf->grid_clusters);
 	conf_ptr->group_info          = conf->group_info;
 
+	conf_ptr->ic_job_dep_check    = conf->ic_job_dep_check;
 	conf_ptr->ic_mode             = conf->ic_mode;
 	conf_ptr->inactive_limit      = conf->inactive_limit;
 
@@ -4059,6 +4099,9 @@ inline static void _slurm_rpc_suspend(slurm_msg_t * msg)
 		break;
 	case DBD_GRID_UPDATE_RESPONSE:
 		_update_clusters_grid_table(msg->data);
+		break;
+	case REQUEST_SICP_JOB_STATE:
+		_get_sicp_job_state_val(msg);
 		break;
 	default:
 		op = "unknown";

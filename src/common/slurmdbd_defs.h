@@ -183,7 +183,13 @@ typedef enum {
 	DBD_GRID_UPDATE_RESPONSE,/* Return message from slurmdbd with
 				  * table of grid clusters              */
 	DBD_SICP_JOB_ID_REQUEST,/* SICP job id request from controller  */
-	DBD_SICP_JOB_ID_RESPONSE /*SICP job id response to controller   */
+	DBD_SICP_JOB_ID_RESPONSE,/*SICP job id response to controller   */
+	DBD_SICP_JOBID_CLUSTER_IDX_REQUEST, /* Request from controller
+				 * for gridTable index of cluster of
+				 * given SICP job ID                    */
+	DBD_SICP_JOBID_CLUSTER_IDX_RESPONSE /* Response to controller
+				 * with index of gridTable of cluster
+				 * of given SICP job ID                 */
 } slurmdbd_msg_type_t;
 
 /*****************************************************************************\

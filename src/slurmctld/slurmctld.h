@@ -164,6 +164,7 @@ typedef struct slurmctld_config {
 	pthread_t thread_id_sig;
 	pthread_t thread_id_power;
 	pthread_t thread_id_rpc;
+	pthread_t thread_id_sicp_depck;
 #else
 	int thread_count_lock;
 	int thread_id_main;
@@ -171,6 +172,7 @@ typedef struct slurmctld_config {
 	int thread_id_sig;
 	int thread_id_power;
 	int thread_id_rpc;
+	int thread_id_sicp_depck;
 #endif
 } slurmctld_config_t;
 
@@ -744,6 +746,12 @@ struct	depend_spec {
 	uint16_t	depend_flags;	/* SLURM_FLAGS_* type */
 	uint32_t	job_id;		/* SLURM job_id */
 	struct job_record *job_ptr;	/* pointer to this job */
+	/*
+	 * The following fields are for use with SICP jobs (may want to place
+	 * them in a union with job_ptr as that field will be NULL for SICP jobs
+	 */
+	char*           controlHost;    /* Host IP addr of foreign controller */
+	uint16_t        controlPort;    /* Port number of foreign controller  */
 };
 
 struct 	step_record {

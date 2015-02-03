@@ -1233,7 +1233,6 @@ extern int _slurmctld_grid_update_request(void *db_conn)
 	slurm_send_recv_slurmdbd_msg(SLURM_PROTOCOL_VERSION, &msg, resp);
 
 	/* ... The RPC manager catches and processes the results. ... */
-	/* Need to pass back a simple status message so that we know if it failed or not. To be added later.*/
 
 	xfree(resp);
 
@@ -1282,6 +1281,42 @@ extern int _request_sicp_job_id(void *db_conn, uint32_t* job_id)
 	return rc;
 }
 
+extern int _request_sicp_jobid_cluster_idx(void *db_conn,
+		uint32_t job_id, int* idx)
+{
+	slurmdbd_msg_t msg;
+	int rc = SLURM_SUCCESS;
+
+	/* Allocate space for the return SICP jobid cluster index
+	 * AND possibly the message type value
+	 */
+	uint32_t* rawmsg =  xmalloc(sizeof(uint32_t)*3);
+
+	/* For use with direct call to slurm_send_recv_slurmdbd_msg */
+	slurmdbd_msg_t *resp;
+
+	resp = xmalloc(sizeof(slurmdbd_msg_t));
+
+	msg.msg_type     = DBD_SICP_JOBID_CLUSTER_IDX_REQUEST;
+	msg.data         = &job_id;
+
+	resp->data       = rawmsg;
+	rc = slurm_send_recv_slurmdbd_msg(SLURM_PROTOCOL_VERSION, &msg, resp);
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--rc = %s", __FUNCTION__, (rc==SLURM_SUCCESS) ?
+				"SLURM_SUCCESS" : "SLURM_FAILURE");
+
+	(*idx) = *(uint32_t*)resp->data;
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		if (rc == SLURM_SUCCESS)
+			info("SICP--%s--SICP job id %u has cluster index of %d",
+				 __FUNCTION__, job_id, *idx);
+
+	xfree(resp);
+
+	return rc;
+}
 
 static int _get_assoc_mgr_wckey_list(void *db_conn, int enforce)
 {

@@ -112,6 +112,13 @@ static void *	_run_prolog(void *arg);
 static bool	_scan_depend(List dependency_list, uint32_t job_id);
 static int	_valid_feature_list(uint32_t job_id, List feature_list);
 static int	_valid_node_feature(char *feature);
+extern uint16_t get_sicp_job_state(struct depend_spec* dep_ptr);
+void            disp_dep_spec(struct depend_spec* dep_ptr);
+extern int      _request_sicp_jobid_cluster_idx(void *db_conn, uint32_t job_id,
+						int* idx);
+static int      _update_sicp_job_dependency(uint16_t depend_type,
+				uint32_t job_id, List new_depend_list);
+
 #ifndef HAVE_FRONT_END
 static void *	_wait_boot(void *arg);
 #endif
@@ -119,6 +126,10 @@ static int	build_queue_timeout = BUILD_TIMEOUT;
 static int	save_last_part_update = 0;
 
 extern diag_stats_t slurmctld_diag_stats;
+extern uint32_t     sicp_jobid_start;
+extern int          nGridClusters;
+
+extern cluster_grid_table_entry_t* grid_table;
 
 /*
  * _build_user_job_list - build list of jobs for a given user
@@ -1965,6 +1976,8 @@ extern int test_job_dependency(struct job_record *job_ptr)
  	bool run_now;
 	int results = 0;
 	struct job_record *qjob_ptr, *djob_ptr;
+	struct job_record dummy_job_rec;
+
 	time_t now = time(NULL);
 	/* For performance reasons with job arrays, we cache dependency
 	 * results and re-use them whenever possible */
@@ -1994,8 +2007,35 @@ extern int test_job_dependency(struct job_record *job_ptr)
 	depend_iter = list_iterator_create(job_ptr->details->depend_list);
 	while ((dep_ptr = list_next(depend_iter))) {
 		bool clear_dep = false;
-		dep_ptr->job_ptr = find_job_array_rec(dep_ptr->job_id,
-						      dep_ptr->array_task_id);
+
+		/*
+		 * If normal job it will have a job_id < sicp_jobid_start
+		 * and will skip block.
+		 * If remote SICP job it will have a job_id >= sicp_jobid_start
+		 *    and the controlHost and controlPort fields will
+		 *    be defined; therefore, it will execute the block of code.
+		 * If local SICP job it will have a job_id >= sicp_jobid_start
+		 *    BUT the controlHost and controlPort fields will
+		 *    be UN-defined; therefore, skip the block and process as
+		 *    it traditionally would.
+		 */
+		if ( dep_ptr->job_id >= sicp_jobid_start && dep_ptr->controlHost
+				&& dep_ptr->controlPort) {
+			dummy_job_rec.job_state = get_sicp_job_state(dep_ptr);
+
+			/* Assign next three lines so as to use existing logic
+			 * below (see "} else if ((djob_ptr == NULL) ||" line.
+			 */
+			dummy_job_rec.magic        = JOB_MAGIC;
+			dummy_job_rec.array_job_id = dep_ptr->job_id;
+			dummy_job_rec.job_id       = dep_ptr->job_id;
+
+			dep_ptr->job_ptr = &dummy_job_rec;
+		} else {
+			dep_ptr->job_ptr = find_job_array_rec(dep_ptr->job_id,
+							dep_ptr->array_task_id);
+		}
+
 		djob_ptr = dep_ptr->job_ptr;
  		if ((dep_ptr->depend_type == SLURM_DEPEND_SINGLETON) &&
  		    job_ptr->name) {
@@ -2071,16 +2111,25 @@ extern int test_job_dependency(struct job_record *job_ptr)
 				}
 			}
 		} else if (dep_ptr->depend_type == SLURM_DEPEND_AFTER) {
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info("SICP--%s--Dependency target job_id: %u",
+					__FUNCTION__, dep_ptr->job_id);
 			if (!IS_JOB_PENDING(djob_ptr))
 				clear_dep = true;
 			else
 				depends = true;
 		} else if (dep_ptr->depend_type == SLURM_DEPEND_AFTER_ANY) {
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info("SICP--%s--Dependency target job_id: %u",
+					__FUNCTION__, dep_ptr->job_id);
 			if (IS_JOB_COMPLETED(djob_ptr))
 				clear_dep = true;
 			else
 				depends = true;
 		} else if (dep_ptr->depend_type == SLURM_DEPEND_AFTER_NOT_OK) {
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info("SICP--%s--Dependency target job_id: %u",
+					__FUNCTION__, dep_ptr->job_id);
 			if (djob_ptr->job_state & JOB_SPECIAL_EXIT)
 				clear_dep = true;
 			else if (!IS_JOB_COMPLETED(djob_ptr))
@@ -2092,6 +2141,9 @@ extern int test_job_dependency(struct job_record *job_ptr)
 				break;
 			}
 		} else if (dep_ptr->depend_type == SLURM_DEPEND_AFTER_OK) {
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info("SICP--%s--Dependency target job_id: %u",
+					__FUNCTION__, dep_ptr->job_id);
 			if (!IS_JOB_COMPLETED(djob_ptr))
 				depends = true;
 			else if (IS_JOB_COMPLETE(djob_ptr))
@@ -2169,7 +2221,7 @@ extern int update_job_dependency(struct job_record *job_ptr, char *new_depend)
 	uint32_t array_task_id;
 	char *tok = new_depend, *sep_ptr, *sep_ptr2 = NULL;
 	List new_depend_list = NULL;
-	struct depend_spec *dep_ptr;
+	struct depend_spec *dep_ptr = NULL;
 	struct job_record *dep_job_ptr;
 	int expand_cnt = 0;
 	bool or_flag = false;
@@ -2363,7 +2415,11 @@ extern int update_job_dependency(struct job_record *job_ptr, char *new_depend)
 				}
 				dep_ptr->job_ptr = dep_job_ptr;
 				(void) list_append(new_depend_list, dep_ptr);
+			} else {
+				_update_sicp_job_dependency(depend_type, job_id,
+							new_depend_list);
 			}
+
 			if (sep_ptr2[0] != ':')
 				break;
 			sep_ptr = sep_ptr2 + 1;	/* skip over ":" */
@@ -2378,7 +2434,7 @@ extern int update_job_dependency(struct job_record *job_ptr, char *new_depend)
 		}
 	}
 
-	if (rc == SLURM_SUCCESS) {
+	if (rc == SLURM_SUCCESS && dep_ptr && dep_ptr->job_ptr) {
 		/* test for circular dependencies (e.g. A -> B -> A) */
 		(void) _scan_depend(NULL, job_ptr->job_id);
 		if (_scan_depend(new_depend_list, job_ptr->job_id))
@@ -2395,6 +2451,81 @@ extern int update_job_dependency(struct job_record *job_ptr, char *new_depend)
 #endif
 	} else {
 		list_destroy(new_depend_list);
+	}
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--rc = %s", __FUNCTION__,
+		     (rc==SLURM_SUCCESS) ? "SLURM_SUCCESS" : "SLURM_FAILURE");
+
+	return rc;
+}
+
+static int _update_sicp_job_dependency(uint16_t depend_type, uint32_t job_id,
+							List new_depend_list)
+{
+	int rc = SLURM_SUCCESS;
+	struct depend_spec *dep_ptr = NULL;
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--The SICP jobid range starts at %u",
+		     __FUNCTION__, sicp_jobid_start);
+
+	if ( job_id < sicp_jobid_start ) { /* Traditional, local job */
+
+		if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+			info("SICP--%s--Just MUST NOT be still active--"
+			     "no record found of it (jid: %u)",
+			     __FUNCTION__, job_id);
+
+	} else { /* SICP job AND is NOT on this system */
+		int rc2, gtIdx = -1;
+
+		if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+			info("SICP--%s--This is a SICP job id (jid: %u)"
+			     " and is not on this system.  Contact slurmdbd "
+			     "for more information", __FUNCTION__, job_id);
+
+		/* Firstly, obtain clusterName (its index) from slurmdbd. */
+		rc2 = _request_sicp_jobid_cluster_idx(acct_db_conn,
+							job_id, &gtIdx);
+		if(rc2 != SLURM_SUCCESS)
+			info("No record of SICP job id (%u) found on slurmdbd. "
+			     "Must not exist anymore!", job_id);
+
+		if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+			info("SICP--%s--The cluster index of the target "
+			     "job is: %d", __FUNCTION__, gtIdx);
+
+		/* Secondly, retrieve contact information for this clusterName
+		 * from local grid_table and store it in the depend_spec.
+		 */
+		if (gtIdx < nGridClusters && gtIdx >= 0) {
+			dep_ptr = xmalloc(sizeof(struct depend_spec));
+
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info("\t\tSICP--%s--With the cluster table "
+				     "index of %d for job id: %u, we have a "
+				     "control host of: %s and control port "
+				     "of: %d", __FUNCTION__, gtIdx,
+				     job_id, grid_table[gtIdx].controlHost,
+				     grid_table[gtIdx].controlPort);
+
+			dep_ptr->depend_type = depend_type;
+			dep_ptr->job_id      = job_id;
+			dep_ptr->controlHost =
+					xstrdup(grid_table[gtIdx].controlHost);
+			dep_ptr->controlPort = grid_table[gtIdx].controlPort;
+			dep_ptr->job_ptr     = NULL;
+
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				disp_dep_spec(dep_ptr);
+
+			/* Add this depend_spec record to the dependency list */
+			if (!list_append(new_depend_list, dep_ptr)) {
+				fatal("list_append memory allocation "
+					"failure");
+			}
+		}
 	}
 	return rc;
 }
@@ -2444,6 +2575,13 @@ static bool _scan_depend(List dependency_list, uint32_t job_id)
 			continue;
 		if (dep_ptr->job_id == job_id)
 			rc = true;
+		else if (!dep_ptr->job_ptr)
+			/*
+			 * No job record pointed to--assuming the dependent job
+			 * is a remote SICP job.  Currently, can't further test
+			 * the dependency chain here.
+			 */
+			continue;
 		else if ((dep_ptr->job_id != dep_ptr->job_ptr->job_id) ||
 			 (dep_ptr->job_ptr->magic != JOB_MAGIC))
 			continue;	/* purged job, ptr not yet cleared */
@@ -3444,4 +3582,22 @@ cleanup_completing(struct job_record *job_ptr)
 	job_hold_requeue(job_ptr);
 
 	slurm_sched_g_schedule();
+}
+
+void
+disp_dep_spec(struct depend_spec* dep_ptr) {
+	if (dep_ptr) {
+		info("dep_ptr->depend_type: %u", dep_ptr->depend_type);
+		info("dep_ptr->job_id: %u",      dep_ptr->job_id);
+	if (dep_ptr->job_ptr)
+		info("dep_ptr->job_ptr EXISTS!");
+	else
+		info("dep_ptr->job_ptr is NULL!");
+	if (dep_ptr->controlHost)
+		info("dep_ptr->controlHost: (%s)", dep_ptr->controlHost);
+	else
+		info("dep_ptr->controlHost is NULL");
+		info("dep_ptr->controlPort: %u",      dep_ptr->controlPort);
+	} else
+		info("dep_ptr is NULL!");
 }

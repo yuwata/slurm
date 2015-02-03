@@ -2686,6 +2686,43 @@ end_it:
 	return fd;
 }
 
+/* Calls connect to make a connection-less datagram connection to the
+ *     foreign primary slurmctld message engine. If the controller
+ *     is very busy the connect may fail, so retry a couple of times.
+ * IN/OUT addr  - address of controller contacted
+ * RET slurm_fd - file descriptor of the connection created
+ */
+slurm_fd_t
+slurm_open_foreign_controller_conn(slurm_addr_t *addr, char* control_host,
+				   uint16_t control_port)
+{
+	slurm_fd_t fd = -1;
+	slurm_protocol_config_t *myproto = NULL;
+	int retry;
+	slurm_addr_t* foreignAddr = xmalloc(sizeof(slurm_addr_t));
+
+	if (!foreignAddr)
+		return SLURM_FAILURE;
+
+	for (retry=0; retry<slurm_get_msg_timeout(); retry++) {
+		if (retry)
+			sleep(1);
+		slurm_set_addr( foreignAddr, control_port, control_host);
+		addr = foreignAddr;
+
+		fd = slurm_open_msg_conn(addr);
+		if (fd >= 0)
+			goto end_it;
+		debug("Failed to contact foreign controller: %s", control_host);
+	}
+	addr = NULL;
+	slurm_seterrno_ret(SLURMCTLD_COMMUNICATIONS_CONNECTION_ERROR);
+
+end_it:
+	xfree(myproto);
+	return fd;
+}
+
 /* calls connect to make a connection-less datagram connection to the
  *	primary or secondary slurmctld message engine
  * RET slurm_fd_t - file descriptor of the connection created
@@ -3788,6 +3825,89 @@ int slurm_send_recv_controller_msg(slurm_msg_t *req, slurm_msg_t *resp)
 		req->flags |= SLURM_GLOBAL_AUTH_KEY;
 
 	if ((fd = slurm_open_controller_conn(&ctrl_addr)) < 0) {
+		rc = -1;
+		goto cleanup;
+	}
+
+	conf = slurm_conf_lock();
+	backup_controller_flag = conf->backup_controller ? true : false;
+	slurmctld_timeout = conf->slurmctld_timeout;
+	slurm_conf_unlock();
+
+	while (retry) {
+		/* If the backup controller is in the process of assuming
+		 * control, we sleep and retry later */
+		retry = 0;
+		rc = _send_and_recv_msg(fd, req, resp, 0);
+		if (resp->auth_cred)
+			g_slurm_auth_destroy(resp->auth_cred);
+		else
+			rc = -1;
+
+		if ((rc == 0) && (!working_cluster_rec)
+		    && (resp->msg_type == RESPONSE_SLURM_RC)
+		    && ((((return_code_msg_t *) resp->data)->return_code)
+			== ESLURM_IN_STANDBY_MODE)
+		    && (backup_controller_flag)
+		    && (difftime(time(NULL), start_time)
+			< (slurmctld_timeout + (slurmctld_timeout / 2)))) {
+
+			debug("Neither primary nor backup controller "
+			      "responding, sleep and retry");
+			slurm_free_return_code_msg(resp->data);
+			sleep(30);
+			if ((fd = slurm_open_controller_conn(&ctrl_addr))
+			    < 0) {
+				rc = -1;
+			} else {
+				retry = 1;
+			}
+		}
+
+		if (rc == -1)
+			break;
+	}
+
+cleanup:
+	if (rc != 0)
+ 		_remap_slurmctld_errno();
+
+	return rc;
+}
+
+/*
+ * slurm_send_recv_foreign_controller_msg
+ * opens a connection to the controller of another cluster, sends the controller
+ * a message, listens for the response, then closes the connection
+ * IN request_msg	- slurm_msg request
+ * OUT response_msg	- slurm_msg response
+ * RET int		- returns 0 on success, -1 on failure and sets errno
+ */
+int slurm_send_recv_foreign_controller_msg(slurm_msg_t *req, slurm_msg_t *resp,
+					char* controlHost, uint16_t controlPort)
+{
+	slurm_fd_t fd = -1;
+	int rc = 0;
+	time_t start_time = time(NULL);
+	int retry = 1;
+	slurm_ctl_conf_t *conf;
+	bool backup_controller_flag;
+	uint16_t slurmctld_timeout;
+	slurm_addr_t ctrl_addr;
+
+	/* Just in case the caller didn't initialize his slurm_msg_t, and
+	 * since we KNOW that we are only sending to one node (the controller),
+	 * we initialize some forwarding variables to disable forwarding.
+	 */
+	forward_init(&req->forward, NULL);
+	req->ret_list = NULL;
+	req->forward_struct = NULL;
+
+	if (working_cluster_rec)
+		req->flags |= SLURM_GLOBAL_AUTH_KEY;
+
+	if ((fd = slurm_open_foreign_controller_conn(&ctrl_addr, controlHost,
+							controlPort)) < 0) {
 		rc = -1;
 		goto cleanup;
 	}

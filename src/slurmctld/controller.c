@@ -248,6 +248,7 @@ static void         build_grid_clusters_table();
 static void         displayGridClustersTable();
 extern int          _slurmctld_grid_update_request(void *db_conn);
 char *              slurm_get_grid_clusters(void);
+static void *       _sicp_rem_depend_check (void *no_data);
 
 /* main - slurmctld main function, start various threads and process RPCs */
 int main(int argc, char *argv[])
@@ -549,33 +550,41 @@ int main(int argc, char *argv[])
 		 * will come via the RPC manager.
 		 */
 		if (slurmctld_conf.ic_mode) {
-			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
-				info("SICP--%s--I Does Grid Table Exist yet? %s",
-					 __FUNCTION__, (grid_table) ? "YES" : "NO" );
 			_slurmctld_grid_update_request(acct_db_conn);
 			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
-				info("SICP--%s--II Does Grid Table Exist yet? %s",
-					 __FUNCTION__, (grid_table) ? "YES" : "NO" );
+				info("SICP--%s--Does Grid Table Exist yet? %s",
+				      __FUNCTION__,
+				     (grid_table) ? "YES" : "NO");
 
- 			if ( slurmctld_conf.first_job_id >= sicp_jobid_start ||
- 			     slurmctld_conf.max_job_id   >  sicp_jobid_start) {
- 				uint32_t tmp32;
+			if ( slurmctld_conf.first_job_id >= sicp_jobid_start ||
+			     slurmctld_conf.max_job_id   >  sicp_jobid_start) {
+				uint32_t tmp32;
 
- 				info ("Local job id range overlaps with that of"
- 				      "the inter-cluster job id range.  "
- 				      "Adjusting local range.");
+				info ("Local job id range overlaps with that of"
+				      "the inter-cluster job id range.  "
+				      "Adjusting local range.");
 
- 				slurmctld_conf.first_job_id = 1;
- 				slurmctld_conf.max_job_id   = sicp_jobid_start;
- 				tmp32 = slurmctld_conf.max_job_id - slurmctld_conf.first_job_id + 1;
- 				if (slurmctld_conf.max_job_cnt > tmp32) {
- 					info("Resetting MaxJobCnt from %u to %u "
- 					     "(MaxJobId - FirstJobId + 1)",
- 					     slurmctld_conf.max_job_cnt, tmp32);
- 					slurmctld_conf.max_job_cnt  = tmp32;
- 				}
- 			}
+				slurmctld_conf.first_job_id = 1;
+				slurmctld_conf.max_job_id   = sicp_jobid_start;
+				tmp32 = slurmctld_conf.max_job_id -
+					slurmctld_conf.first_job_id + 1;
+				if (slurmctld_conf.max_job_cnt > tmp32) {
+					info("Resetting MaxJobCnt from %u to %u"
+					     " (MaxJobId - FirstJobId + 1)",
+					     slurmctld_conf.max_job_cnt, tmp32);
+					slurmctld_conf.max_job_cnt  = tmp32;
+				}
+			}
 
+			slurm_attr_init(&thread_attr);
+			while (pthread_create(&slurmctld_config.thread_id_sicp_depck,
+					      &thread_attr,
+					      _sicp_rem_depend_check,
+					      NULL)) {
+				error("pthread_create error %m");
+				sleep(1);
+			}
+			slurm_attr_destroy(&thread_attr);
 		} else {
 			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
 				info("SICP--%s--CLUSTER ID = 0, NOT sending msg"
@@ -2674,9 +2683,9 @@ build_grid_clusters_table() {
 	}
 
 	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
-		info("SICP--%s--FILE: %s, FUNCTION: %s, LINE: %d--cluster name: %s, last:"
-		 	" %s, count: %d", __FUNCTION__, __FILE__, __FUNCTION__, __LINE__,
-			one_name, last, nGridClusters);
+		info("SICP--%s--FILE: %s, LINE: %d--cluster name: %s, "
+		     "last: %s, count: %d", __FUNCTION__, __FILE__, __LINE__,
+		     one_name, last, nGridClusters);
 
 	xfree(names);
 	xfree(grid_clusters_list);
@@ -2697,4 +2706,71 @@ displayGridClustersTable() {
 			SAFE_PRINT(grid_table[ix].clusterName),
 			SAFE_PRINT(grid_table[ix].controlHost),
 			grid_table[ix].controlPort);
+}
+
+static void*
+_sicp_rem_depend_check (void* no_data) {
+	ListIterator job_iterator;
+	struct job_record *job_ptr;
+	int ix = 1;
+	int pause;
+
+	if ( slurmctld_conf.ic_job_dep_check <= 0 ) {
+		info("The time between IC job dependency checks is only %u."
+		     "  Adjusting to 1 second.",
+		     slurmctld_conf.ic_job_dep_check);
+		slurmctld_conf.ic_job_dep_check = 1;
+	}
+
+	/* Because this check is outside the infinite loop, if not in SICP
+	 * mode when the slurmcltd is initially started then this thread
+	 * simply ends.  Afterwards, the values of the various SICP settings
+	 * can be adjusted and go in effect with an "scontrol reconfig" BUT
+	 * as this thread will have already been gone by such time, the only
+	 * way for it to start, is to restart the controller.
+	 */
+	if ( slurmctld_conf.ic_mode ) {
+		while (1) {
+			do {
+				pause = sleep(slurmctld_conf.ic_job_dep_check);
+			} while (pause > 0);
+
+			/* Write lock on jobs */
+			slurmctld_lock_t job_write_lock =
+				{ NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK };
+
+			if (!job_list) {
+				info("NO jobs currently in the queue.");
+				return NULL;
+			}
+
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+                                info("SICP--%s--Checking dependencies of all "
+				     "jobs of the cluster", __FUNCTION__);
+
+
+			lock_slurmctld(job_write_lock);
+			job_iterator = list_iterator_create(job_list);
+
+			while ((job_ptr = list_next(job_iterator))) {
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info ("%10d) %12u", ix, job_ptr->job_id);
+				/* Use logic of job_independent which ultimately
+				 * will call code to pass message to foreign
+				 * controller for status of any remote
+				 * dependencies.
+				 */
+				job_independent(job_ptr, 0);
+				++ix;
+
+			}
+			list_iterator_destroy(job_iterator);
+			unlock_slurmctld(job_write_lock);
+		}
+	} else {
+		info ("Not using SICP mode.  Therefore, assuming"
+		      "there are no IC job dependencies to validate.");
+	}
+
+	return NULL;
 }

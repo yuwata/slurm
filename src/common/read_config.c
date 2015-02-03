@@ -223,6 +223,7 @@ s_p_options_t slurm_conf_options[] = {
 	{"HealthCheckInterval", S_P_UINT16},
 	{"HealthCheckNodeState", S_P_STRING},
 	{"HealthCheckProgram", S_P_STRING},
+	{"ICJobDepCheck", S_P_UINT16},
 	{"ICMode", S_P_BOOLEAN},
 	{"InactiveLimit", S_P_UINT16},
 	{"JobAcctGatherType", S_P_STRING},
@@ -2421,6 +2422,7 @@ init_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr)
 	ctl_conf_ptr->hash_val			= (uint32_t) NO_VAL;
 	ctl_conf_ptr->health_check_interval	= 0;
 	xfree(ctl_conf_ptr->health_check_program);
+	ctl_conf_ptr->ic_job_dep_check		= (uint16_t) NO_VAL;
 	ctl_conf_ptr->ic_mode            	= 0;
 	ctl_conf_ptr->inactive_limit		= (uint16_t) NO_VAL;
 	xfree (ctl_conf_ptr->job_acct_gather_freq);
@@ -2877,6 +2879,10 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 	if(!s_p_get_boolean((bool *)&conf->ic_mode,
 		"ICMode", hashtbl))
 		conf->ic_mode = false;
+
+	if (!s_p_get_uint16(&conf->ic_job_dep_check, "ICJobDepCheck",
+			    hashtbl))
+		conf->ic_job_dep_check = (uint16_t)NO_VAL;
 
 	if (s_p_get_string(&conf->backup_controller, "BackupController",
 			   hashtbl)

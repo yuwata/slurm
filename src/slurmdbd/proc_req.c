@@ -192,6 +192,9 @@ extern void slurmdbd_pack_grid_table(slurmdbd_msg_t *in, uint16_t rpc_version,
 int _send_grid_cluster_update(slurmdbd_msg_t* rmsg, char* host, uint16_t port);
 int _send_sicp_job_id_response(slurmdbd_msg_t* rmsg, char* host, uint16_t port);
 extern Buf _make_sicp_job_id_response_msg (uint32_t jobId);
+extern Buf _make_sicp_jobid_cluster_idx_response_msg ( uint32_t cidx );
+static int _get_sicp_jobid_cluster_idx(slurmdbd_conn_t *slurmdbd_conn,
+			Buf in_buffer, Buf *out_buffer, uint32_t *uid);
 static void disp_sicp_job_list();
 static void _destroy_sicp_job_rec(void* x);
 
@@ -484,6 +487,10 @@ proc_req(slurmdbd_conn_t *slurmdbd_conn,
 		case DBD_SICP_JOB_ID_REQUEST:
 			rc = _get_sicp_job_id(slurmdbd_conn, in_buffer,
 							out_buffer, uid);
+			break;
+		case DBD_SICP_JOBID_CLUSTER_IDX_REQUEST:
+			rc = _get_sicp_jobid_cluster_idx(slurmdbd_conn,
+						in_buffer, out_buffer, uid);
 			break;
 		default:
 			comment = "Invalid RPC";
@@ -3763,6 +3770,61 @@ static int  slurmdbd_grid_table_update(slurmdbd_conn_t *slurmdbd_conn,
 	return rc;
 }
 
+/*
+ * For a given job id (a SICP job), finds and returns the index of the
+ * Slurm cluster on which the job is enqueued/running.
+ */
+static int  _get_sicp_jobid_cluster_idx(slurmdbd_conn_t *slurmdbd_conn,
+                        Buf in_buffer, Buf *out_buffer, uint32_t *uid)
+{
+        int rc = SLURM_SUCCESS;
+	uint32_t job_id = -1;
+
+	int      cidx = -1;
+	sicp_job_info_t* sicp_job = NULL; /* Entry in SICP job table
+					   * representing the requested job
+					   */
+
+	/*
+	 * Since we are receiving simply a single unsigned 32-bit integer,
+	 * no need for a special type and unpack routine.  Unpack directly.
+	 */
+	if ( slurmdbd_conn->rpc_version >= SLURMDBD_MIN_VERSION ) {
+		safe_unpack32(&job_id, in_buffer);
+	}
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--SICP target job_id %d", __FUNCTION__, job_id);
+
+	/* Search table of SICP job id's to see if any match
+	 * the unpacked jobid. */
+	sicp_job = find_sicp_job (job_id);
+	if (sicp_job) {
+		int idx;
+		/* Look up in grid_table the Cluster Name sicp_job->clusterName,
+		 * this index is what we wish to return.
+		 */
+		for (idx=0; idx < nGridEntries; idx++)
+			if(!strcmp(sicp_job->clusterName,
+				   grid_table[idx].clusterName)) {
+				cidx = idx;
+				break;
+			}
+	}
+
+	*out_buffer = _make_sicp_jobid_cluster_idx_response_msg(cidx);
+	goto end_it;
+
+unpack_error:
+	debug2("%s: unpack_error: size_buf(in_buffer) %u", __FUNCTION__,
+		size_buf(in_buffer));
+	rc = SLURM_ERROR;
+
+end_it:
+
+	return rc;
+}
+
 /* For this transaction, there should be no need to receive any data from the
  * controller and we need only return an integer (uint32_t) representing the
  * job id.  Therefore, there is currently nothing to unpack in the beginning
@@ -3924,7 +3986,9 @@ void _sicp_job_rec_clean () {
 				sicp_job_ptr->completed = 0;
 				xfree(sicp_job_ptr->clusterName);
 				xfree(sicp_job_ptr);
-				list_remove(sicp_job_iterator); /* removes this last item returned */
+
+				/* removes this last item returned */
+				list_remove(sicp_job_iterator);
 
 				disp_sicp_job_list();
 			}
@@ -3956,6 +4020,16 @@ extern Buf _make_sicp_job_id_response_msg ( uint32_t jobId )
 	return buffer;
 }
 
+extern Buf _make_sicp_jobid_cluster_idx_response_msg ( uint32_t cidx )
+{
+	Buf buffer;
+
+	buffer = init_buf(1024);
+	pack16((uint16_t) DBD_SICP_JOBID_CLUSTER_IDX_RESPONSE, buffer);
+	pack32(cidx, buffer);
+	return buffer;
+}
+
 static int
 add_modify_grid_cluster(slurmdbd_conn_t* slurmdbd_conn) {
 	int ix, found = 0, rv = SLURM_SUCCESS;
@@ -3973,7 +4047,8 @@ add_modify_grid_cluster(slurmdbd_conn_t* slurmdbd_conn) {
 		/* We need to add a new record but have no more space, increase
 		 * the size of table. */
 		mGridEntries *= 2;
-		xrealloc_nz(grid_table, sizeof(cluster_grid_table_entry_t)*mGridEntries);
+		xrealloc_nz(grid_table, sizeof(cluster_grid_table_entry_t) *
+				mGridEntries);
 	}
 	if ( !found ) {
 		grid_table[ix].clusterName = xstrdup(slurmdbd_conn->cluster_name);

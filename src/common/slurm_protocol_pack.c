@@ -712,6 +712,15 @@ _unpack_cache_info_msg(cache_info_msg_t **,
 		       Buf,
 		       uint16_t protocol_version);
 
+static void _pack_sicp_job_state_msg(uint32_t *jobidmsg, Buf buffer,
+					uint16_t protocol_version);
+static void _pack_sicp_job_state_resp_msg(uint16_t *jobstatemsg, Buf buffer,
+					uint16_t protocol_version);
+static int _unpack_sicp_job_state_msg(uint32_t **msg_ptr, Buf buffer,
+					uint16_t protocol_version);
+static int _unpack_sicp_job_state_resp_msg(uint16_t **msg_ptr, Buf buffer,
+					uint16_t protocol_version);
+
 /* pack_header
  * packs a slurm protocol header that precedes every slurm message
  * IN header - the header structure to pack
@@ -1378,6 +1387,20 @@ pack_msg(slurm_msg_t const *msg, Buf buffer)
 		slurmdbd_pack_grid_table((slurmdbd_msg_t *)msg->data,
 						msg->protocol_version, buffer);
 		break;
+	case REQUEST_SICP_JOB_STATE:
+		/* Pack outgoing request message for SICP job state from
+		 * dependent controller
+		 */
+		_pack_sicp_job_state_msg(msg->data, buffer,
+							msg->protocol_version);
+		break;
+	case RESPONSE_SICP_JOB_STATE:
+		/* Pack incoming response message with SICP job state from
+		 * target controller
+		 */
+		_pack_sicp_job_state_resp_msg(msg->data, buffer,
+							msg->protocol_version);
+		break;
 	default:
 		debug("No pack method for msg type %u", msg->msg_type);
 		return EINVAL;
@@ -1385,6 +1408,22 @@ pack_msg(slurm_msg_t const *msg, Buf buffer)
 
 	}
 	return SLURM_SUCCESS;
+}
+
+static void
+_pack_sicp_job_state_msg(uint32_t *jobidmsg, Buf buffer,
+			 uint16_t protocol_version)
+{
+	xassert (jobidmsg != NULL);
+	pack32  (*jobidmsg, buffer);
+}
+
+static void
+_pack_sicp_job_state_resp_msg(uint16_t *jobstatemsg, Buf buffer,
+			      uint16_t protocol_version)
+{
+	xassert (jobstatemsg != NULL);
+	pack16  (*jobstatemsg, buffer);
 }
 
 /* unpack_msg
@@ -2042,6 +2081,20 @@ unpack_msg(slurm_msg_t * msg, Buf buffer)
 	case DBD_GRID_UPDATE_RESPONSE:
 		slurmdbd_unpack_grid_table((dbd_grid_table_msg_t**)&msg->data,
 					   msg->protocol_version, buffer);
+		break;
+	case REQUEST_SICP_JOB_STATE:
+		rc = _unpack_sicp_job_state_msg( (uint32_t**)&msg->data, buffer,
+					      msg->protocol_version);
+		/* Unpack incoming request message for SICP job state from
+		 * dependent controller (on target controller)
+		 */
+		break;
+	case RESPONSE_SICP_JOB_STATE:
+		rc = _unpack_sicp_job_state_resp_msg( (uint16_t**)&msg->data,
+					       buffer, msg->protocol_version);
+		/* Unpack outgoing response message with SICP job state from
+		 * target controller (on dependent controller)
+		 */
 		break;
 	default:
 		debug("No unpack method for msg type %u", msg->msg_type);
@@ -5453,7 +5506,9 @@ _pack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t * build_ptr, Buf buffer,
 		pack16(build_ptr->health_check_node_state, buffer);
 		packstr(build_ptr->health_check_program, buffer);
 
+		pack16(build_ptr->ic_job_dep_check, buffer);
 		pack16(build_ptr->ic_mode, buffer);
+
 		pack16(build_ptr->inactive_limit, buffer);
 
 		packstr(build_ptr->job_acct_gather_freq, buffer);
@@ -6301,6 +6356,7 @@ _unpack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t **build_buffer_ptr,
 		safe_unpackstr_xmalloc(&build_ptr->health_check_program,
 				       &uint32_tmp, buffer);
 
+		safe_unpack16(&build_ptr->ic_job_dep_check, buffer);
 		safe_unpack16(&build_ptr->ic_mode, buffer);
 		safe_unpack16(&build_ptr->inactive_limit, buffer);
 
@@ -11221,6 +11277,42 @@ static int _unpack_ping_slurmd_resp(ping_slurmd_resp_msg_t **msg_ptr,
 
 unpack_error:
 	slurm_free_ping_slurmd_resp(msg);
+	*msg_ptr = NULL;
+	return SLURM_ERROR;
+}
+
+static int _unpack_sicp_job_state_msg(uint32_t **msg_ptr,
+				    Buf buffer, uint16_t protocol_version)
+{
+	uint32_t *msg;
+
+	xassert (msg_ptr != NULL);
+	msg = xmalloc(sizeof(uint32_t));
+	*msg_ptr = msg;
+	safe_unpack32(msg, buffer);
+
+	return SLURM_SUCCESS;
+
+unpack_error:
+	xfree(msg);
+	*msg_ptr = NULL;
+	return SLURM_ERROR;
+}
+
+static int _unpack_sicp_job_state_resp_msg(uint16_t **msg_ptr,
+				    Buf buffer, uint16_t protocol_version)
+{
+	uint16_t *msg;
+
+	xassert (msg_ptr != NULL);
+	msg = xmalloc(sizeof(uint16_t));
+	*msg_ptr = msg;
+	safe_unpack16(msg, buffer);
+
+	return SLURM_SUCCESS;
+
+unpack_error:
+	xfree(msg);
 	*msg_ptr = NULL;
 	return SLURM_ERROR;
 }

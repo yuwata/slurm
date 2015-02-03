@@ -660,6 +660,16 @@ extern Buf pack_slurmdbd_msg(slurmdbd_msg_t *req, uint16_t rpc_version)
 		break;  /* As of now, nothing to do here. */
 	case DBD_SICP_JOB_ID_REQUEST:
 		break;  /* As of now, nothing to do here. */
+	case DBD_SICP_JOBID_CLUSTER_IDX_REQUEST:
+		if (rpc_version >= SLURMDBD_MIN_VERSION) {
+			pack32((*(uint32_t*)req->data), buffer);
+
+			if ( slurm_get_debug_flags() & DEBUG_FLAG_SICP )
+				info("SICP--%s--job id to search for %u",
+				     __FUNCTION__, *(uint32_t*)req->data);
+
+		}
+		break;
 	default:
 		error("slurmdbd: Invalid message type pack %u(%s:%u)",
 		      req->msg_type,
@@ -865,6 +875,19 @@ extern int unpack_slurmdbd_msg(slurmdbd_msg_t *resp,
 			 * controller.
 			 */
 			((uint32_t*)resp->data)[0] = rjob_id;
+		}
+		break;
+	case DBD_SICP_JOBID_CLUSTER_IDX_RESPONSE:
+		{
+			uint32_t cidx = NO_VAL;
+			if ( resp->data ) {
+				safe_unpack32(&cidx, buffer);
+			}
+			/* Pass this back to _request_sicp_jobid_cluster_idx so
+			 * that it could be used in the appropriate spot of the
+			 * controller.
+			 */
+			((uint32_t*)resp->data)[0] = cidx;
 		}
 		break;
 

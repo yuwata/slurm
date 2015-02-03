@@ -101,6 +101,9 @@ static void  _free_all_reservations(reserve_info_msg_t *msg);
 
 static void _free_all_step_info (job_step_info_response_msg_t *msg);
 
+int slurm_send_recv_foreign_controller_msg(slurm_msg_t *req, slurm_msg_t *resp,
+				char* controlHost, uint16_t controlPort);
+
 /*
  * slurm_msg_t_init - initialize a slurm message
  * OUT msg - pointer to the slurm_msg_t structure which will be initialized
@@ -3240,6 +3243,50 @@ extern bool valid_spank_job_env(char **spank_job_env,
 		xfree (entry);
 	}
 	return true;
+}
+
+/* For a given SICP job, contact its foreign controller and retrieve its
+ * current job state (a single integer)
+ */
+extern uint16_t
+get_sicp_job_state(struct depend_spec* dep_ptr) {
+	uint16_t  rv = 0;
+	slurm_msg_t req_msg, resp_msg;
+
+	slurm_msg_t_init(&req_msg);
+	slurm_msg_t_init(&resp_msg);
+
+	req_msg.msg_type = REQUEST_SICP_JOB_STATE;
+	req_msg.data     = &dep_ptr->job_id;
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--Contacting foreign controller at host %s and "
+			"port: %u", __FUNCTION__, dep_ptr->controlHost,
+			dep_ptr->controlPort);
+
+	if ( slurm_send_recv_foreign_controller_msg(&req_msg, &resp_msg,
+		dep_ptr->controlHost, dep_ptr->controlPort) < 0) {
+
+		info("Error!  Could NOT receive the SICP job state from the"
+		     " foreign controller.");
+
+		/* By returning 0, job will be left in pending state. */
+                return rv;
+	}
+
+	switch (resp_msg.msg_type) {
+	case RESPONSE_SICP_JOB_STATE:
+		rv = *(uint16_t*) resp_msg.data;
+		break;
+	default:
+		slurm_seterrno_ret(SLURM_UNEXPECTED_MSG_ERROR);
+		break;
+	}
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--SICP Job State: %u", __FUNCTION__, rv);
+
+	return rv;
 }
 
 /* Return ctime like string without the newline.
