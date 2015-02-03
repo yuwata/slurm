@@ -217,11 +217,13 @@ s_p_options_t slurm_conf_options[] = {
 	{"FirstJobId", S_P_UINT32},
 	{"GetEnvTimeout", S_P_UINT16},
 	{"GresTypes", S_P_STRING},
+	{"GridClusters", S_P_STRING},
 	{"GroupUpdateForce", S_P_UINT16},
 	{"GroupUpdateTime", S_P_UINT16},
 	{"HealthCheckInterval", S_P_UINT16},
 	{"HealthCheckNodeState", S_P_STRING},
 	{"HealthCheckProgram", S_P_STRING},
+	{"ICMode", S_P_BOOLEAN},
 	{"InactiveLimit", S_P_UINT16},
 	{"JobAcctGatherType", S_P_STRING},
 	{"JobAcctGatherFrequency", S_P_STRING},
@@ -2285,6 +2287,7 @@ free_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr, bool purge_node_hash)
 		list_destroy((List)ctl_conf_ptr->ext_sensors_conf);
 	xfree (ctl_conf_ptr->ext_sensors_type);
 	xfree (ctl_conf_ptr->gres_plugins);
+	xfree (ctl_conf_ptr->grid_clusters);
 	xfree (ctl_conf_ptr->health_check_program);
 	xfree (ctl_conf_ptr->job_acct_gather_freq);
 	xfree (ctl_conf_ptr->job_acct_gather_type);
@@ -2413,10 +2416,12 @@ init_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr)
 	ctl_conf_ptr->first_job_id		= NO_VAL;
 	ctl_conf_ptr->get_env_timeout		= 0;
 	xfree(ctl_conf_ptr->gres_plugins);
+	xfree(ctl_conf_ptr->grid_clusters);
 	ctl_conf_ptr->group_info		= (uint16_t) NO_VAL;
 	ctl_conf_ptr->hash_val			= (uint32_t) NO_VAL;
 	ctl_conf_ptr->health_check_interval	= 0;
 	xfree(ctl_conf_ptr->health_check_program);
+	ctl_conf_ptr->ic_mode            	= 0;
 	ctl_conf_ptr->inactive_limit		= (uint16_t) NO_VAL;
 	xfree (ctl_conf_ptr->job_acct_gather_freq);
 	xfree (ctl_conf_ptr->job_acct_gather_type);
@@ -2869,6 +2874,10 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 	uint16_t uint16_tmp;
 	uint64_t tot_prio_weight;
 
+	if(!s_p_get_boolean((bool *)&conf->ic_mode,
+		"ICMode", hashtbl))
+		conf->ic_mode = false;
+
 	if (s_p_get_string(&conf->backup_controller, "BackupController",
 			   hashtbl)
 	    && strcasecmp("localhost", conf->backup_controller) == 0) {
@@ -3094,6 +3103,7 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 		conf->first_job_id = DEFAULT_FIRST_JOB_ID;
 
 	s_p_get_string(&conf->gres_plugins, "GresTypes", hashtbl);
+	s_p_get_string(&conf->grid_clusters, "GridClusters", hashtbl);
 
 	if (s_p_get_uint16(&conf->inactive_limit, "InactiveLimit", hashtbl)) {
 #ifdef HAVE_BG_L_P
@@ -3266,6 +3276,8 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 		return SLURM_ERROR;
 	}
 
+	if (!s_p_get_uint32(&conf->first_job_id, "FirstJobId", hashtbl))
+		conf->first_job_id = DEFAULT_FIRST_JOB_ID;
 	if (!s_p_get_uint32(&conf->max_job_id, "MaxJobId", hashtbl))
 		conf->max_job_id = DEFAULT_MAX_JOB_ID;
 
@@ -4458,6 +4470,11 @@ extern char * debug_flags2str(uint64_t debug_flags)
 			xstrcat(rc, ",");
 		xstrcat(rc, "NO_CONF_HASH");
 	}
+	if (debug_flags & DEBUG_FLAG_SICP) {
+		if (rc)
+			xstrcat(rc, ",");
+		xstrcat(rc, "SICP");
+	}
 	if (debug_flags & DEBUG_FLAG_NO_REALTIME) {
 		if (rc)
 			xstrcat(rc, ",");
@@ -4613,6 +4630,8 @@ extern int debug_str2flags(char *debug_flags, uint64_t *flags_out)
 			(*flags_out) |= DEBUG_FLAG_LICENSE;
 		else if (strcasecmp(tok, "NO_CONF_HASH") == 0)
 			(*flags_out) |= DEBUG_FLAG_NO_CONF_HASH;
+		else if (strcasecmp(tok, "SICP") == 0)
+			(*flags_out) |= DEBUG_FLAG_SICP;
 		else if (strcasecmp(tok, "NoRealTime") == 0)
 			(*flags_out) |= DEBUG_FLAG_NO_REALTIME;
 		else if (strcasecmp(tok, "Priority") == 0)

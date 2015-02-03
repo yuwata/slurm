@@ -183,6 +183,7 @@
 #define LONG_OPT_PARSABLE        0x157
 #define LONG_OPT_CPU_FREQ        0x158
 #define LONG_OPT_PRIORITY        0x160
+#define LONG_OPT_SICP            0x161
 
 /*---- global variables, defined in opt.h ----*/
 opt_t opt;
@@ -334,6 +335,7 @@ static void _opt_default()
 	opt.jobid    = NO_VAL;
 	opt.jobid_set = false;
 	opt.dependency = NULL;
+	opt.sicp_mode = 0;
 	opt.account  = NULL;
 	opt.comment  = NULL;
 	opt.qos      = NULL;
@@ -749,6 +751,7 @@ static struct option long_options[] = {
 	{"reboot",        no_argument,       0, LONG_OPT_REBOOT},
 	{"requeue",       no_argument,       0, LONG_OPT_REQUEUE},
 	{"reservation",   required_argument, 0, LONG_OPT_RESERVATION},
+	{"sicp",          optional_argument, 0, LONG_OPT_SICP},
 	{"signal",        required_argument, 0, LONG_OPT_SIGNAL},
 	{"sockets-per-node", required_argument, 0, LONG_OPT_SOCKETSPERNODE},
 	{"tasks-per-node",required_argument, 0, LONG_OPT_NTASKSPERNODE},
@@ -1641,6 +1644,18 @@ static void _set_options(int argc, char **argv)
 		case LONG_OPT_CHECKPOINT_DIR:
 			xfree(opt.ckpt_dir);
 			opt.ckpt_dir = xstrdup(optarg);
+			break;
+		case LONG_OPT_SICP:
+			if (optarg) {
+				/* Eventually, add function to process the value
+				 * given (e.g. --sicp=simultaneous).  For now,
+				 * when --sicp is specified, hardcoded 1 is the
+				 * setting
+				 */
+				opt.sicp_mode = 1;
+			} else {
+				opt.sicp_mode = 1;
+			}
 			break;
 		case LONG_OPT_SIGNAL:
 			if (get_signal_opts(optarg, &opt.warn_signal,
@@ -2833,6 +2848,8 @@ static void _opt_list(void)
 	info("account           : %s", opt.account);
 	info("comment           : %s", opt.comment);
 	info("dependency        : %s", opt.dependency);
+	info("sicp_mode         : %s",
+			opt.sicp_mode ? "intercluster" : "normal");
 	if (opt.gres)
 		info("gres              : %s", opt.gres);
 	info("qos               : %s", opt.qos);
@@ -2914,6 +2931,7 @@ static void _usage(void)
 "              [--jobid=id] [--verbose] [--gid=group] [--uid=user] [-W sec] \n"
 "              [--contiguous] [--mincpus=n] [--mem=MB] [--tmp=MB] [-C list]\n"
 "              [--account=name] [--dependency=type:jobid] [--comment=name]\n"
+"              [--sicp]\n"
 #ifdef HAVE_BG		/* Blue gene specific options */
 #ifdef HAVE_BG_L_P
 "              [--geometry=XxYxZ] "
@@ -3003,6 +3021,8 @@ static void _help(void)
 "  -t, --time=minutes          time limit\n"
 "      --time-min=minutes      minimum time limit (if distinct)\n"
 "  -s, --share                 share nodes with other jobs\n"
+"      --sicp                  If specified, signifies job is to receive\n"
+"                              job id from the incluster reserve range.\n"
 "  -S, --core-spec=cores       count of reserved cores\n"
 "      --uid=user_id           user ID to run job as (user root only)\n"
 "  -v, --verbose               verbose mode (multiple -v's increase verbosity)\n"

@@ -718,6 +718,7 @@ job_desc_msg_create_from_opts (void)
 	}
 	j->user_id        = opt.uid;
 	j->dependency     = opt.dependency;
+	j->sicp_mode      = opt.sicp_mode;
 	if (opt.nice)
 		j->nice   = NICE_OFFSET + opt.nice;
 	if (opt.priority)

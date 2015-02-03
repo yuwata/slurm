@@ -127,6 +127,7 @@ typedef struct srun_options {
 	bool jobid_set;		/* true if jobid explicitly set */
 	char *mpi_type;		/* --mpi=type			*/
 	char *dependency;	/* --dependency, -P type:jobid	*/
+	uint8_t sicp_mode;      /* Is inter-cluster job?        */
 	int nice;		/* --nice			*/
 	uint32_t priority;	/* --priority */
 	char *account;		/* --account, -U acct_name	*/

@@ -196,6 +196,10 @@ int main(int argc, char *argv[])
 			error("Batch job submission failed: %m");
 			exit(error_exit);
 		}
+		if (desc.sicp_mode) {
+			error("Inter-cluster Batch job submission failed: %m");
+			exit(error_exit);
+		}
 
 		if (retries)
 			debug("%s", msg);
@@ -383,6 +387,7 @@ static int _fill_job_desc_from_opts(job_desc_msg_t *desc)
 	desc->group_id = opt.gid;
 	if (opt.dependency)
 		desc->dependency = xstrdup(opt.dependency);
+	desc->sicp_mode = opt.sicp_mode;
 
 	if (opt.array_inx)
 		desc->array_inx = xstrdup(opt.array_inx);

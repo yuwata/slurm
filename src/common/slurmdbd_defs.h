@@ -178,6 +178,12 @@ typedef enum {
 	DBD_ADD_CLUS_RES,    	/* Add cluster using a resource    	*/
 	DBD_REMOVE_CLUS_RES,   	/* Remove existing cluster resource    	*/
 	DBD_MODIFY_CLUS_RES,   	/* Modify existing cluster resource   	*/
+	DBD_GRID_UPDATE_REQUEST,/* Request current copy of cluster grid
+				 * table from the slurmdbd              */
+	DBD_GRID_UPDATE_RESPONSE,/* Return message from slurmdbd with
+				  * table of grid clusters              */
+	DBD_SICP_JOB_ID_REQUEST,/* SICP job id request from controller  */
+	DBD_SICP_JOB_ID_RESPONSE /*SICP job id response to controller   */
 } slurmdbd_msg_type_t;
 
 /*****************************************************************************\
@@ -403,6 +409,13 @@ typedef struct dbd_step_start_msg {
 	uint32_t total_cpus;	/* count of allocated processors */
 	uint32_t total_tasks;	/* count of tasks for step */
 } dbd_step_start_msg_t;
+
+/* Piggybacking the starting jobid of the reserved SIC jobs range. */
+typedef struct dbd_range_table_msg{
+	uint32_t sicp_jobid_start;
+	uint32_t ngridEntries;
+	cluster_grid_table_entry_t*  ranges;
+} dbd_grid_table_msg_t;
 
 /* flag to let us know if we are running on cache or from the actual
  * database */

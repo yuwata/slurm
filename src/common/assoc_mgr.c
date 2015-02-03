@@ -72,6 +72,9 @@ static slurmdb_assoc_rec_t **assoc_hash = NULL;
 static pthread_mutex_t locks_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t locks_cond = PTHREAD_COND_INITIALIZER;
 
+cluster_grid_table_entry_t* grid_table;
+int nGridClusters;
+
 static int _get_str_inx(char *name)
 {
 	int j, index = 0;
@@ -1208,6 +1211,75 @@ static int _get_assoc_mgr_user_list(void *db_conn, int enforce)
 
 	assoc_mgr_unlock(&locks);
 	return SLURM_SUCCESS;
+}
+
+extern int _slurmctld_grid_update_request(void *db_conn)
+{
+	slurmdbd_msg_t  msg;
+	int             rc = SLURM_SUCCESS;
+
+	dbd_grid_table_msg_t* retTable = xmalloc(sizeof(dbd_grid_table_msg_t));
+
+	slurmdbd_msg_t *resp; /* For use with direct call
+			       * to slurm_send_recv_slurmdbd_msg */
+	resp = xmalloc(sizeof(slurmdbd_msg_t));
+
+
+	info("Obtaining updated Slurm grid table from the slurmdbd.");
+
+	msg.msg_type     = DBD_GRID_UPDATE_REQUEST;
+
+	resp->data       = retTable;
+	slurm_send_recv_slurmdbd_msg(SLURM_PROTOCOL_VERSION, &msg, resp);
+
+	/* ... The RPC manager catches and processes the results. ... */
+	/* Need to pass back a simple status message so that we know if it failed or not. To be added later.*/
+
+	xfree(resp);
+
+	return rc;
+}
+
+extern int _request_sicp_job_id(void *db_conn, uint32_t* job_id)
+{
+	slurmdbd_msg_t msg;
+	int rc = SLURM_SUCCESS;
+
+	uint32_t theJobId;
+	/* Alloc space for return SICP job id AND possibly message type value */
+	uint32_t* rawmsg =  xmalloc(sizeof(uint32_t)*3);
+
+	slurmdbd_msg_t *resp; /* For use with direct call
+			       * to slurm_send_recv_slurmdbd_msg */
+	resp = xmalloc(sizeof(slurmdbd_msg_t));
+
+	msg.msg_type     = DBD_SICP_JOB_ID_REQUEST;
+	msg.data         = NULL;
+
+	resp->data       = rawmsg;
+	rc = slurm_send_recv_slurmdbd_msg(SLURM_PROTOCOL_VERSION, &msg, resp);
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--rc = %s", __FUNCTION__,
+			(rc==SLURM_SUCCESS)?"SLURM_SUCCESS" : "SLURM_FAILURE");
+
+	theJobId = *(uint32_t*)resp->data;
+	(*job_id) = theJobId;
+
+	/* We now return 0 for the SICP job id if there is a failure.
+	 * One possible cause is if all available SICP job id's are
+	 * currently in use.
+	 */
+
+	if (!theJobId) rc = SLURM_FAILURE;
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--rc = %s", __FUNCTION__,
+			(rc==SLURM_SUCCESS)?"SLURM_SUCCESS" : "SLURM_FAILURE");
+
+	xfree(resp);
+
+	return rc;
 }
 
 

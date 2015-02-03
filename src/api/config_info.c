@@ -639,6 +639,11 @@ extern void *slurm_ctl_conf_2_key_pairs (slurm_ctl_conf_t* slurm_ctl_conf_ptr)
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("GridClusters");
+	key_pair->value = xstrdup(slurm_ctl_conf_ptr->grid_clusters);
+	list_append(ret_list, key_pair);
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("GroupUpdateForce");
 	if (slurm_ctl_conf_ptr->group_info & GROUP_FORCE)
 		key_pair->value = xstrdup("1");
@@ -684,6 +689,20 @@ extern void *slurm_ctl_conf_2_key_pairs (slurm_ctl_conf_t* slurm_ctl_conf_ptr)
 	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("HealthCheckProgram");
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->health_check_program);
+	list_append(ret_list, key_pair);
+
+	snprintf(tmp_str, sizeof(tmp_str), "%u",
+		slurm_ctl_conf_ptr->ic_job_dep_check);
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("ICJobDepCheck");
+	key_pair->value = xstrdup(tmp_str);
+	list_append(ret_list, key_pair);
+
+	snprintf(tmp_str, sizeof(tmp_str), "%u",
+		slurm_ctl_conf_ptr->ic_mode);
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("ICMode");
+	key_pair->value = xstrdup(tmp_str);
 	list_append(ret_list, key_pair);
 
 	snprintf(tmp_str, sizeof(tmp_str), "%u sec",

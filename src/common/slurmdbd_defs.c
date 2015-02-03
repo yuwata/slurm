@@ -112,6 +112,10 @@ static bool      callbacks_requested = 0;
 static bool      from_ctld           = 0;
 static bool      need_to_register    = 0;
 
+extern cluster_grid_table_entry_t* grid_table;
+extern int nGridEntries;
+extern int mGridEntries;
+
 static void * _agent(void *x);
 static void   _close_slurmdbd_fd(void);
 static void   _create_agent(void);
@@ -134,6 +138,8 @@ static void   _shutdown_agent(void);
 static void   _slurmdbd_packstr(void *str, uint16_t rpc_version, Buf buffer);
 static int    _slurmdbd_unpackstr(void **str, uint16_t rpc_version, Buf buffer);
 static int    _tot_wait (struct timeval *start_time);
+void slurmdbd_unpack_grid_table(dbd_grid_table_msg_t **msg,
+					uint16_t rpc_version, Buf buffer);
 
 /****************************************************************************
  * Socket open/close/read/write functions
@@ -650,6 +656,10 @@ extern Buf pack_slurmdbd_msg(slurmdbd_msg_t *req, uint16_t rpc_version)
 		break;
 	case DBD_RECONFIG:
 		break;
+	case DBD_GRID_UPDATE_REQUEST:
+		break;  /* As of now, nothing to do here. */
+	case DBD_SICP_JOB_ID_REQUEST:
+		break;  /* As of now, nothing to do here. */
 	default:
 		error("slurmdbd: Invalid message type pack %u(%s:%u)",
 		      req->msg_type,
@@ -665,6 +675,7 @@ extern int unpack_slurmdbd_msg(slurmdbd_msg_t *resp,
 			       uint16_t rpc_version, Buf buffer)
 {
 	int rc = SLURM_SUCCESS;
+	dbd_rc_msg_t *msg;
 
 	safe_unpack16(&resp->msg_type, buffer);
 
@@ -804,6 +815,12 @@ extern int unpack_slurmdbd_msg(slurmdbd_msg_t *resp,
 		rc = slurmdbd_unpack_rc_msg((dbd_rc_msg_t **)&resp->data,
 					    rpc_version,
 					    buffer);
+		msg = (dbd_rc_msg_t*)resp->data;
+		if (msg->sent_type == DBD_GRID_UPDATE_REQUEST)
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info("SICP--%s--We received the following "
+				     "message for our DBD_GRID_UPDATE_REQUEST"
+				     " call: %s", __FUNCTION__, msg->comment);
 		break;
 	case DBD_STEP_COMPLETE:
 		rc = slurmdbd_unpack_step_complete_msg(
@@ -837,6 +854,20 @@ extern int unpack_slurmdbd_msg(slurmdbd_msg_t *resp,
 	case DBD_RECONFIG:
 		/* No message to unpack */
 		break;
+	case DBD_SICP_JOB_ID_RESPONSE:
+		{
+			uint32_t rjob_id = NO_VAL;
+			if ( resp->data ) {
+				safe_unpack32(&rjob_id, buffer);
+			}
+			/* Pass this back to _request_sicp_job_id so that it
+			 * could be used in the appropriate spot of the
+			 * controller.
+			 */
+			((uint32_t*)resp->data)[0] = rjob_id;
+		}
+		break;
+
 	default:
 		error("slurmdbd: Invalid message type unpack %u(%s)",
 		      resp->msg_type,
@@ -2781,6 +2812,19 @@ extern void slurmdbd_free_usage_msg(dbd_usage_msg_t *msg,
 	}
 }
 
+extern void slurmdbd_free_grid_table_msg(dbd_grid_table_msg_t *msg)
+{	int ix;
+	if(msg){
+		for(ix=0; ix<msg->ngridEntries; ix++) {
+			xfree(msg->ranges[ix].clusterName);
+			xfree(msg->ranges[ix].controlHost);
+		}
+		xfree(msg->ranges);
+		xfree(msg);
+	}
+
+}
+
 /****************************************************************************\
  * Pack and unpack data structures
 \****************************************************************************/
@@ -3410,6 +3454,65 @@ slurmdbd_pack_job_suspend_msg(dbd_job_suspend_msg_t *msg,
 	pack16(msg->job_state, buffer);
 	pack_time(msg->submit_time, buffer);
 	pack_time(msg->suspend_time, buffer);
+}
+
+extern void
+slurmdbd_pack_grid_table(slurmdbd_msg_t *in, uint16_t rpc_version, Buf buffer)
+{
+	int ix;
+	dbd_grid_table_msg_t *msg = (dbd_grid_table_msg_t*)in->data;
+
+	pack16(in->msg_type, buffer);
+	pack32(msg->sicp_jobid_start, buffer);
+	pack32(msg->ngridEntries, buffer);
+
+        for(ix=0; ix<msg->ngridEntries; ix++) {
+		packstr(msg->ranges[ix].clusterName, buffer);
+		packstr(msg->ranges[ix].controlHost, buffer);
+		pack16 (msg->ranges[ix].controlPort, buffer);
+	}
+}
+
+extern void
+slurmdbd_unpack_grid_table(dbd_grid_table_msg_t **msg, uint16_t rpc_version,
+							Buf buffer)
+{
+	uint32_t uint32_tmp;
+	uint16_t msg_type;
+	int ix;
+
+	dbd_grid_table_msg_t* drtt_loc = xmalloc(sizeof(dbd_grid_table_msg_t));
+	dbd_grid_table_msg_t *msg_ptr = *msg;
+	safe_unpack16(&msg_type, buffer);
+	safe_unpack32(&drtt_loc->sicp_jobid_start, buffer);
+	safe_unpack32(&drtt_loc->ngridEntries, buffer);
+
+	drtt_loc->ranges = xmalloc(sizeof(cluster_grid_table_entry_t) *
+							drtt_loc->ngridEntries);
+
+	info("%s/%s [%d]--clusterName controlHost controlPort minJobId "
+				"maxJobId", __FILE__, __FUNCTION__, __LINE__);
+
+        for(ix=0; ix<drtt_loc->ngridEntries; ix++) {
+		safe_unpackstr_xmalloc(&drtt_loc->ranges[ix].clusterName,
+						&uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&drtt_loc->ranges[ix].controlHost,
+						&uint32_tmp, buffer);
+		safe_unpack16         (&drtt_loc->ranges[ix].controlPort,
+						buffer);
+		info("\t%s %s %d",      drtt_loc->ranges[ix].clusterName,
+					drtt_loc->ranges[ix].controlHost,
+					drtt_loc->ranges[ix].controlPort);
+	}
+
+	*msg = drtt_loc;
+
+	return;
+
+unpack_error:
+	slurmdbd_free_grid_table_msg(msg_ptr);
+	*msg = NULL;
+	return;
 }
 
 extern int

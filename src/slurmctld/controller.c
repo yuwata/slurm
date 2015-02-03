@@ -201,6 +201,11 @@ static pthread_cond_t server_thread_cond = PTHREAD_COND_INITIALIZER;
 static pid_t	slurmctld_pid;
 static char *	slurm_conf_filename;
 
+/* SICP Information */
+cluster_grid_table_entry_t* grid_table       = NULL;
+int                         nGridClusters    = 0;
+uint32_t                    sicp_jobid_start = 0;
+
 /*
  * Static list of signals to block in this process
  * *Must be zero-terminated*
@@ -239,6 +244,10 @@ static void         _update_nice(void);
 inline static void  _usage(char *prog_name);
 static bool         _valid_controller(void);
 static bool         _wait_for_server_thread(void);
+static void         build_grid_clusters_table();
+static void         displayGridClustersTable();
+extern int          _slurmctld_grid_update_request(void *db_conn);
+char *              slurm_get_grid_clusters(void);
 
 /* main - slurmctld main function, start various threads and process RPCs */
 int main(int argc, char *argv[])
@@ -472,6 +481,9 @@ int main(int argc, char *argv[])
 			}
 
 			slurmctld_primary = 1;
+			if (slurmctld_conf.grid_clusters)
+				build_grid_clusters_table();
+			displayGridClustersTable();
 
 		} else {
 			error("this host (%s) not valid controller (%s or %s)",
@@ -531,6 +543,46 @@ int main(int argc, char *argv[])
 			sleep(1);
 		}
 		slurm_attr_destroy(&thread_attr);
+
+		/* Call to _slurmctld_grid_update_request is placed
+                 * AFTER the start of the RPC manager as the return message
+		 * will come via the RPC manager.
+		 */
+		if (slurmctld_conf.ic_mode) {
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info("SICP--%s--I Does Grid Table Exist yet? %s",
+					 __FUNCTION__, (grid_table) ? "YES" : "NO" );
+			_slurmctld_grid_update_request(acct_db_conn);
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info("SICP--%s--II Does Grid Table Exist yet? %s",
+					 __FUNCTION__, (grid_table) ? "YES" : "NO" );
+
+ 			if ( slurmctld_conf.first_job_id >= sicp_jobid_start ||
+ 			     slurmctld_conf.max_job_id   >  sicp_jobid_start) {
+ 				uint32_t tmp32;
+
+ 				info ("Local job id range overlaps with that of"
+ 				      "the inter-cluster job id range.  "
+ 				      "Adjusting local range.");
+
+ 				slurmctld_conf.first_job_id = 1;
+ 				slurmctld_conf.max_job_id   = sicp_jobid_start;
+ 				tmp32 = slurmctld_conf.max_job_id - slurmctld_conf.first_job_id + 1;
+ 				if (slurmctld_conf.max_job_cnt > tmp32) {
+ 					info("Resetting MaxJobCnt from %u to %u "
+ 					     "(MaxJobId - FirstJobId + 1)",
+ 					     slurmctld_conf.max_job_cnt, tmp32);
+ 					slurmctld_conf.max_job_cnt  = tmp32;
+ 				}
+ 			}
+
+		} else {
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info("SICP--%s--CLUSTER ID = 0, NOT sending msg"
+					" to slurmdbd", __FUNCTION__);
+		}
+
+		displayGridClustersTable();
 
 		/*
 		 * create attached thread for signal handling
@@ -612,6 +664,11 @@ int main(int argc, char *argv[])
 	}
 
 	slurm_layouts_fini();
+
+	/* Display what this cluster had for its cluster grid table
+	 * before exiting
+	 */
+	displayGridClustersTable();
 
 	/* Since pidfile is created as user root (its owner is
 	 *   changed to SlurmUser) SlurmUser may not be able to
@@ -2570,4 +2627,74 @@ static void  _set_work_dir(void)
 		} else
 			info("chdir to /var/tmp");
 	}
+}
+
+/* This function should be called as soon as possible so that we create
+ * the table BEFORE contacting the Slurmdbd.
+ */
+void
+build_grid_clusters_table() {
+	int ix = 0;
+	char *last = NULL, *names, *one_name, *ptr;
+	char * grid_clusters_list = NULL;
+
+	grid_clusters_list = slurm_get_grid_clusters();
+	if ((grid_clusters_list == NULL) || (grid_clusters_list[0] == '\0'))
+		return;
+
+	/*
+	 * If we reached here, then there is at least one cluster
+	 * name in the list.
+	 */
+	nGridClusters = 1;
+
+	ptr = grid_clusters_list;
+
+	/* Count the commas to determine how much to increment the count. */
+	while((ptr = strchr(ptr,','))) {
+		++nGridClusters;
+		++ptr;
+	}
+
+	grid_table = xmalloc(sizeof(cluster_grid_table_entry_t)*nGridClusters);
+
+	names    = xstrdup(grid_clusters_list);
+	one_name = strtok_r(names, ",", &last);
+
+	while (one_name) {
+
+		if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+			info("SICP--%s--FILE: %s, FUNCTION: %s, LINE: %d--"
+				"cluster name: %s", __FUNCTION__,
+				__FILE__, __FUNCTION__, __LINE__, one_name);
+
+		grid_table[ix].clusterName = xstrdup(one_name);
+		one_name = strtok_r(NULL, ",", &last);
+		++ix;
+	}
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--FILE: %s, FUNCTION: %s, LINE: %d--cluster name: %s, last:"
+		 	" %s, count: %d", __FUNCTION__, __FILE__, __FUNCTION__, __LINE__,
+			one_name, last, nGridClusters);
+
+	xfree(names);
+	xfree(grid_clusters_list);
+}
+
+#define SAFE_PRINT(str) (str) ? str : "<NULL>"
+
+void
+displayGridClustersTable() {
+	int ix;
+
+	if ( !(slurm_get_debug_flags() & DEBUG_FLAG_SICP) )
+		return;
+
+	info("SICP--%s--Clusters of Grid: ...", __FUNCTION__);
+	for(ix = 0; ix < nGridClusters; ++ix)
+		info("Cluster: %s, Control Host: %s, Control Port: %d",
+			SAFE_PRINT(grid_table[ix].clusterName),
+			SAFE_PRINT(grid_table[ix].controlHost),
+			grid_table[ix].controlPort);
 }

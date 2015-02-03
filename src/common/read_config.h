@@ -286,6 +286,12 @@ typedef struct {
 	char *value;
 } config_key_pair_t;
 
+typedef struct {
+	char* clusterName;
+	char* controlHost;
+	uint16_t   controlPort;
+} cluster_grid_table_entry_t;
+
 /* Destroy a front_end record built by slurm_conf_frontend_array() */
 extern void destroy_frontend(void *ptr);
 

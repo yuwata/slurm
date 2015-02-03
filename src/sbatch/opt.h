@@ -105,6 +105,8 @@ typedef struct sbatch_options {
 	bool jobid_set;		/* true of jobid explicitly set */
 	char *mpi_type;		/* --mpi=type			*/
 	char *dependency;	/* --dependency, -P type:jobid	*/
+	uint8_t sicp_mode;      /* --sicp   Whether or not it is
+				 *          an intercluster job.*/
 	int nice;		/* --nice			*/
 	uint32_t priority;	/* --priority                   */
 	char *account;		/* --account, -U acct_name	*/

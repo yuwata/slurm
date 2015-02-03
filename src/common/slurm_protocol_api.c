@@ -1184,6 +1184,24 @@ char *slurm_get_gres_plugins(void)
 	return gres_plugins;
 }
 
+/* slurm_get_grid_clusters
+ * get grid_clusters from slurmctld_conf object from
+ * slurmctld_conf object
+ * RET char *   - grid_clusters, MUST be xfreed by caller
+ */
+char *slurm_get_grid_clusters(void)
+{
+	char *grid_clusters = NULL;
+	slurm_ctl_conf_t *conf;
+
+	if (slurmdbd_conf) {
+	} else {
+		conf = slurm_conf_lock();
+		grid_clusters = xstrdup(conf->grid_clusters);
+		slurm_conf_unlock();
+	}
+	return grid_clusters;
+}
 
 /* slurm_get_job_submit_plugins
  * get job_submit_plugins from slurmctld_conf object from

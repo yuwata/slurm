@@ -647,6 +647,7 @@ static int _fill_job_desc_from_opts(job_desc_msg_t *desc)
 	desc->group_id = opt.gid;
 	if (opt.dependency)
 		desc->dependency = xstrdup(opt.dependency);
+	desc->sicp_mode = opt.sicp_mode;
 
 	if (opt.mem_bind)
 		desc->mem_bind       = opt.mem_bind;

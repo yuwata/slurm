@@ -54,6 +54,13 @@ typedef struct {
 	uint16_t rpc_version; /* version of rpc */
 } slurmdbd_conn_t;
 
+/* For tracking location and possibly status of SICP jobs */
+typedef struct {
+	uint32_t job_id;
+	char*    clusterName;
+	time_t   completed;
+} sicp_job_info_t;
+
 /* Process an incoming RPC
  * slurmdbd_conn IN/OUT - in will that the newsockfd set before
  *       calling and db_conn and rpc_version will be filled in with the init.

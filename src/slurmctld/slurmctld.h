@@ -224,6 +224,9 @@ extern int   sched_interval;
 extern bool  slurmctld_init_db;
 extern int   slurmctld_primary;
 
+extern cluster_grid_table_entry_t* grid_table;
+extern int nGridClusters;
+
 /* Buffer size use to print the jobid2str()
  * jobid, taskid and state.
  */
@@ -682,6 +685,7 @@ struct job_record {
 	char *resp_host;		/* host for srun communications */
 	char *sched_nodes;		/* list of nodes scheduled for job */
 	dynamic_plugin_data_t *select_jobinfo;/* opaque data, BlueGene */
+	uint8_t  sicp_mode;             /* 0--normal job, 1--inter cluster job*/
 	char **spank_job_env;		/* environment variables for job prolog
 					 * and epilog scripts as set by SPANK
 					 * plugins */

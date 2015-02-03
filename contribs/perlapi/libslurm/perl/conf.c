@@ -119,6 +119,8 @@ slurm_ctl_conf_to_hv(slurm_ctl_conf_t *conf, HV *hv)
 
 	if (conf->gres_plugins)
 		STORE_FIELD(hv, conf, gres_plugins, charp);
+	if (conf->grid_clusters)
+		STORE_FIELD(hv, conf, grid_clusters, charp);
 
 	STORE_FIELD(hv, conf, group_info, uint16_t);
 
@@ -131,6 +133,8 @@ slurm_ctl_conf_to_hv(slurm_ctl_conf_t *conf, HV *hv)
 	if (conf->health_check_program)
 		STORE_FIELD(hv, conf, health_check_program, charp);
 
+	STORE_FIELD(hv, conf, ic_job_dep_check, uint16_t);
+	STORE_FIELD(hv, conf, ic_mode, uint16_t);
 	STORE_FIELD(hv, conf, inactive_limit, uint16_t);
 
 	if (conf->job_acct_gather_freq)
@@ -458,11 +462,14 @@ hv_to_slurm_ctl_conf(HV *hv, slurm_ctl_conf_t *conf)
 	FETCH_FIELD(hv, conf, fs_dampening_factor, uint16_t, FALSE);
 	FETCH_FIELD(hv, conf, get_env_timeout, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, gres_plugins, charp, FALSE);
+	FETCH_FIELD(hv, conf, grid_clusters, charp, FALSE);
 	FETCH_FIELD(hv, conf, group_info, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, hash_val, uint32_t, TRUE);
 	FETCH_FIELD(hv, conf, health_check_interval, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, health_check_node_state, uint32_t, TRUE);
 	FETCH_FIELD(hv, conf, health_check_program, charp, FALSE);
+	FETCH_FIELD(hv, conf, ic_job_dep_check, uint16_t, TRUE);
+	FETCH_FIELD(hv, conf, ic_mode, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, inactive_limit, uint16_t, TRUE);
 	FETCH_FIELD(hv, conf, job_acct_gather_freq, charp, TRUE);
 	FETCH_FIELD(hv, conf, job_acct_gather_params, charp, FALSE);

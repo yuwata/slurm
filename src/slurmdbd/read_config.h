@@ -98,6 +98,13 @@ typedef struct slurm_dbd_conf {
 	uint32_t	purge_step;	/* purge time for step info	*/
 	uint32_t        purge_suspend;  /* purge suspend data older
 					 * than this in months or days	*/
+	uint32_t	sicp_jobid_start;/* uid of slurm_user_name	*/
+	uint32_t	sicp_ic_job_retention; /* Amount of time (in    */
+					/* seconds to retain IC job     */
+					/* records.                     */
+	uint32_t	sicp_ic_job_rec_check; /* Time between checks   */
+					/* for expunging old IC job     */
+					/* records.                     */
 	uint32_t	slurm_user_id;	/* uid of slurm_user_name	*/
 	char *		slurm_user_name;/* user that slurmcdtld runs as	*/
 	char *		storage_backup_host;/* backup host where DB is

@@ -177,6 +177,31 @@ static int   _step_complete(slurmdbd_conn_t *slurmdbd_conn,
 static int   _step_start(slurmdbd_conn_t *slurmdbd_conn,
 			 Buf in_buffer, Buf *out_buffer, uint32_t *uid);
 
+
+static int   slurmdbd_grid_table_update(slurmdbd_conn_t *slurmdbd_conn,
+                         Buf in_buffer, Buf *out_buffer, uint32_t *uid);
+static int  _get_sicp_job_id(slurmdbd_conn_t *slurmdbd_conn,
+                        Buf in_buffer, Buf *out_buffer, uint32_t *uid);
+static int add_modify_grid_cluster(slurmdbd_conn_t* slurmdbd_conn);
+static void display_grid_table();
+static int add_sicp_job_list_entry (uint32_t jobId, char* hostName);
+static sicp_job_info_t* find_sicp_job (uint32_t jobId);
+
+extern void slurmdbd_pack_grid_table(slurmdbd_msg_t *in, uint16_t rpc_version,
+				     Buf buffer);
+int _send_grid_cluster_update(slurmdbd_msg_t* rmsg, char* host, uint16_t port);
+int _send_sicp_job_id_response(slurmdbd_msg_t* rmsg, char* host, uint16_t port);
+extern Buf _make_sicp_job_id_response_msg (uint32_t jobId);
+static void disp_sicp_job_list();
+static void _destroy_sicp_job_rec(void* x);
+
+
+extern cluster_grid_table_entry_t* grid_table;
+extern int nGridEntries;
+extern int mGridEntries;
+
+List sicpJobList = NULL;
+
 /* Process an incoming RPC
  * slurmdbd_conn IN/OUT - in will that the newsockfd set before
  *       calling and db_conn and rpc_version will be filled in with the init.
@@ -451,6 +476,14 @@ proc_req(slurmdbd_conn_t *slurmdbd_conn,
 		case DBD_STEP_START:
 			rc = _step_start(slurmdbd_conn,
 					 in_buffer, out_buffer, uid);
+			break;
+		case DBD_GRID_UPDATE_REQUEST:
+			rc = slurmdbd_grid_table_update(slurmdbd_conn,
+						in_buffer, out_buffer, uid);
+			break;
+		case DBD_SICP_JOB_ID_REQUEST:
+			rc = _get_sicp_job_id(slurmdbd_conn, in_buffer,
+							out_buffer, uid);
 			break;
 		default:
 			comment = "Invalid RPC";
@@ -1802,6 +1835,7 @@ static int  _job_complete(slurmdbd_conn_t *slurmdbd_conn,
 			  Buf in_buffer, Buf *out_buffer, uint32_t *uid)
 {
 	dbd_job_comp_msg_t *job_comp_msg = NULL;
+	sicp_job_info_t    *sicp_job     = NULL;
 	struct job_record job;
 	struct job_details details;
 	int rc = SLURM_SUCCESS;
@@ -1841,6 +1875,17 @@ static int  _job_complete(slurmdbd_conn_t *slurmdbd_conn,
 	details.submit_time = job_comp_msg->submit_time;
 
 	job.details = &details;
+
+	if(job.job_id >= slurmdbd_conf->sicp_jobid_start) {
+		if(!sicpJobList) {
+			sicpJobList = list_create(_destroy_sicp_job_rec);
+		}
+		sicp_job = find_sicp_job (job.job_id);
+		if ( sicp_job ) {
+			sicp_job->completed = job.end_time;
+		}
+		disp_sicp_job_list();
+	}
 
 	if (job.job_state & JOB_RESIZING) {
 		job.resize_time = job_comp_msg->end_time;
@@ -3680,3 +3725,283 @@ end_it:
 	return rc;
 }
 
+static int  slurmdbd_grid_table_update(slurmdbd_conn_t *slurmdbd_conn,
+                        Buf in_buffer, Buf *out_buffer, uint32_t *uid)
+{
+        int rc = SLURM_SUCCESS;
+        slurmdbd_msg_t rmsg;
+	char *comment = NULL;
+	dbd_grid_table_msg_t range_table_msg;
+	int ix;
+
+	/* put here the logic of the ids*/
+	rc = add_modify_grid_cluster(slurmdbd_conn);
+	display_grid_table();
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("\nSICP--%s--Start of SICP Jobid Range: %u", __FUNCTION__,
+					slurmdbd_conf->sicp_jobid_start);
+
+	/* Piggybacking this value as well in the return message. */
+	range_table_msg.sicp_jobid_start = slurmdbd_conf->sicp_jobid_start;
+
+	range_table_msg.ngridEntries     = nGridEntries;
+	range_table_msg.ranges           = grid_table;
+
+	rmsg.msg_type = DBD_GRID_UPDATE_RESPONSE;
+	rmsg.data     = &range_table_msg;
+
+	for(ix = 0; ix < nGridEntries; ix++) {
+			rc = _send_grid_cluster_update(&rmsg,
+				grid_table[ix].controlHost,
+				grid_table[ix].controlPort);
+	}
+
+	*out_buffer = make_dbd_rc_msg(slurmdbd_conn->rpc_version,
+				      rc, comment, DBD_GRID_UPDATE_RESPONSE);
+
+	return rc;
+}
+
+/* For this transaction, there should be no need to receive any data from the
+ * controller and we need only return an integer (uint32_t) representing the
+ * job id.  Therefore, there is currently nothing to unpack in the beginning
+ * and we need no special data type to pack into the buffer--merely pack the
+ * message type and immediately after the integer representing the job id.
+ */
+static int  _get_sicp_job_id(slurmdbd_conn_t *slurmdbd_conn,
+                        Buf in_buffer, Buf *out_buffer, uint32_t *uid)
+{
+        int rc = SLURM_SUCCESS;
+	static uint32_t cur_sicp_job_id = -1;
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--cur_sicp_job_id = %u", __FUNCTION__,
+		     cur_sicp_job_id);
+
+	if( cur_sicp_job_id == -1 || cur_sicp_job_id == 0 )
+		cur_sicp_job_id = slurmdbd_conf->sicp_jobid_start;
+
+	/* put here the logic of the obtaining the next sicp job id*/
+
+	if (cur_sicp_job_id >= NO_VAL) {
+		cur_sicp_job_id = 0;
+		rc = 0; /* Indicate failure */
+	} else {
+		/* Need to add check and appropriate error-handling in the
+		 * case where jobId already has a record (has been used).
+		 */
+		rc = add_sicp_job_list_entry(cur_sicp_job_id,
+				slurmdbd_conn->cluster_name);
+
+		disp_sicp_job_list();
+	}
+
+	if (!rc) cur_sicp_job_id = 0; /* Pass 0 back to controller which it
+				       * should then interpret as an error. */
+
+	*out_buffer = _make_sicp_job_id_response_msg(cur_sicp_job_id);
+
+	if (cur_sicp_job_id) ++cur_sicp_job_id;
+
+	/* Check if we surpassed ~end of uint32_t range.
+	 * If yes, set the current inter-cluster job id back to
+	 * the beginning of its range.
+	 * NO_VAL equals 2 less than this range but it is close enough.
+	 */
+
+	if (cur_sicp_job_id >= NO_VAL)
+		cur_sicp_job_id = slurmdbd_conf->sicp_jobid_start;
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP) {
+		info("SICP--%s--cur_sicp_job_id = %u", __FUNCTION__,
+					cur_sicp_job_id);
+		disp_sicp_job_list ();
+	}
+
+	return rc;
+}
+
+/*
+ * Return 0 if non-successful (for example we ran out of SICP job id's.
+ *        1 if successful.
+ */
+static int add_sicp_job_list_entry (uint32_t jobId, char* hostName) {
+	int rv = 0;
+	sicp_job_info_t* new_sicp_job = NULL;
+
+	if(!sicpJobList) {
+		sicpJobList = list_create(_destroy_sicp_job_rec);
+	}
+	new_sicp_job = find_sicp_job (jobId);
+	if ( !new_sicp_job ) {
+		if (hostName) {
+			new_sicp_job = xmalloc(sizeof(sicp_job_info_t));
+			new_sicp_job->clusterName = xstrdup(hostName);
+			new_sicp_job->job_id = jobId;
+			new_sicp_job->completed = 0; /* Not completed yet */
+			list_append(sicpJobList, new_sicp_job);
+			rv = 1;
+		} else {
+			info("No cluster name provided.");
+		}
+	} else {
+		info("Entry already exists for SICP job id: %u.\n  Possible "
+		     "wrap of SICP job id's and possibly we are out of SICP "
+		     "job id's.", jobId);
+		/*
+		 * Must wait for the IC job record to be freed.
+		 */
+		disp_sicp_job_list();
+	}
+
+	return rv;
+}
+
+/* Returns NULL if a record with jobId is not found.
+ *         The sicp_job_info_t record corresponding to the jobId if found.
+ */
+static sicp_job_info_t* find_sicp_job (uint32_t jobId) {
+	sicp_job_info_t* sicp_job_ptr = NULL,* rv = NULL;
+	ListIterator sicp_job_iterator;
+
+	if ( !sicpJobList ) return NULL;
+
+	sicp_job_iterator = list_iterator_create(sicpJobList);
+	while ((sicp_job_ptr = (sicp_job_info_t*) list_next(sicp_job_iterator))) {
+		if (sicp_job_ptr->job_id == jobId) rv = sicp_job_ptr;
+	}
+
+	return rv;
+}
+
+static void disp_sicp_job_list () {
+	sicp_job_info_t* sicp_job_ptr = NULL;
+	ListIterator sicp_job_iterator;
+	static int call = 1;
+
+	if ( !(slurm_get_debug_flags() & DEBUG_FLAG_SICP))
+		return;
+
+	sicp_job_iterator = list_iterator_create(sicpJobList);
+
+	info("[%d] Inter-Cluster Job List Information: ...", call);
+	info("[%d] JobId\tCluster Name\tCompleted.", call);
+
+	while ((sicp_job_ptr =(sicp_job_info_t*)list_next(sicp_job_iterator))) {
+		info ("[%d] %u\t%s %lu", call, sicp_job_ptr->job_id,
+					sicp_job_ptr->clusterName,
+					sicp_job_ptr->completed);
+	}
+	++call;
+}
+
+void _sicp_job_rec_clean () {
+	sicp_job_info_t* sicp_job_ptr = NULL;
+	ListIterator sicp_job_iterator;
+	time_t now = time(0);
+
+	if (!sicpJobList) return;
+	sicp_job_iterator = list_iterator_create(sicpJobList);
+
+	while ((sicp_job_ptr =(sicp_job_info_t*)list_next(sicp_job_iterator))) {
+
+		if (sicp_job_ptr->completed) {
+
+			if (now - sicp_job_ptr->completed >
+			    slurmdbd_conf->sicp_ic_job_retention) {
+
+				/* Job expired more than the retention time
+				 * period ago, "clean" record.
+				 */
+
+				if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+					info("SICP--%s--Job with ID: %u expired"
+					     " long ago, removing record!",
+					     __FUNCTION__, sicp_job_ptr->job_id);
+
+				sicp_job_ptr->job_id    = 0;
+				sicp_job_ptr->completed = 0;
+				xfree(sicp_job_ptr->clusterName);
+				xfree(sicp_job_ptr);
+				list_remove(sicp_job_iterator); /* removes this last item returned */
+
+				disp_sicp_job_list();
+			}
+		}
+	}
+}
+
+/*
+ * Destroy a sicp_job_info_t record, free it's memory
+ */
+static void _destroy_sicp_job_rec(void *x)
+{
+	sicp_job_info_t *p = (sicp_job_info_t *) x;
+
+	xassert(p);
+	p->job_id = 0;
+	xfree(p->clusterName);
+	xfree(p);
+}
+
+
+extern Buf _make_sicp_job_id_response_msg ( uint32_t jobId )
+{
+	Buf buffer;
+
+	buffer = init_buf(1024);
+	pack16((uint16_t) DBD_SICP_JOB_ID_RESPONSE, buffer);
+	pack32(jobId, buffer);
+	return buffer;
+}
+
+static int
+add_modify_grid_cluster(slurmdbd_conn_t* slurmdbd_conn) {
+	int ix, found = 0, rv = SLURM_SUCCESS;
+
+	/* First search the table to see if this cluster already has an entry.*/
+	for(ix = 0; ix < nGridEntries; ix++) {
+		if ( !strcmp(grid_table[ix].clusterName,
+				slurmdbd_conn->cluster_name) ) {
+			found = 1;
+			break;
+		}
+	}
+
+	if (!found && nGridEntries == mGridEntries) {
+		/* We need to add a new record but have no more space, increase
+		 * the size of table. */
+		mGridEntries *= 2;
+		xrealloc_nz(grid_table, sizeof(cluster_grid_table_entry_t)*mGridEntries);
+	}
+	if ( !found ) {
+		grid_table[ix].clusterName = xstrdup(slurmdbd_conn->cluster_name);
+		grid_table[ix].controlHost = xstrdup(slurmdbd_conn->ip);
+		grid_table[ix].controlPort = slurmdbd_conn->ctld_port;
+		++nGridEntries;
+	} else {
+		/* An existing entry for the given cluster has been
+		 * found, use it.
+		 */
+		grid_table[ix].controlPort = slurmdbd_conn->ctld_port;
+
+		/* Re-assign the controlHost in case that has changed. */
+		xfree(grid_table[ix].controlHost);
+		grid_table[ix].controlHost = xstrdup(slurmdbd_conn->ip);
+	}
+
+	return rv;
+}
+
+static void
+display_grid_table() {
+	int ix;
+
+	info("%32s %32s %32s", "Cluster", "Control Host", "Port");
+	for(ix = 0; ix < nGridEntries; ix++)
+		info("%d) %32s %32s %32u",  ix+1,
+			grid_table[ix].clusterName,
+			grid_table[ix].controlHost,
+			grid_table[ix].controlPort);
+}

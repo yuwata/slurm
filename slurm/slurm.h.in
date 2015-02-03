@@ -1204,6 +1204,8 @@ typedef struct job_descriptor {	/* For submit, allocate, and update requests */
 				 * for batch only */
 	uint8_t open_mode;	/* out/err open mode truncate or append,
 				 * see OPEN_MODE_* */
+	uint8_t sicp_mode;	/* States whether job is a SICP job and if so
+				 * what type */
 	uint16_t other_port;	/* port to send various notification msg to */
 	uint8_t overcommit;	/* over subscribe resources, for batch only */
 	char *partition;	/* name of requested partition,
@@ -2191,6 +2193,7 @@ typedef struct reservation_name_msg {
 #define DEBUG_FLAG_BURST_BUF    0x0000010000000000 /* Burst buffer plugin */
 #define DEBUG_FLAG_CPU_FREQ     0x0000020000000000 /* --cpu_freq debug */
 #define DEBUG_FLAG_POWER        0x0000040000000000 /* Power plugin debug */
+#define DEBUG_FLAG_SICP		0x0000080000000000 /* Slurm Inter-Cluster */
 
 #define GROUP_FORCE		0x8000	/* if set, update group membership
 					 * info even if no updates to
@@ -2288,6 +2291,8 @@ typedef struct slurm_ctl_conf {
 	uint16_t fs_dampening_factor; /* dampening for Fairshare factor */
 	uint16_t get_env_timeout; /* timeout for srun --get-user-env option */
 	char * gres_plugins;	/* list of generic resource plugins */
+	char * grid_clusters;   /* list of Slurm Clusters in Slurm Grid
+				 * (if using this feature) */
 	uint16_t group_info;	/* see GROUP_* fields above */
 	uint32_t hash_val;      /* Hash value of the slurm.conf file */
 	uint16_t health_check_interval;	/* secs between health checks */
@@ -2295,6 +2300,9 @@ typedef struct slurm_ctl_conf {
 				 * health check program, see
 				 * HEALTH_CHECK_NODE_* above */
 	char * health_check_program;	/* pathname of health check program */
+	uint16_t ic_job_dep_check; /* number of seconds between independent-*/
+				/* thread check of remote dependencies */
+	uint16_t ic_mode;       /* enable Inter-cluster mode */
 	uint16_t inactive_limit;/* seconds of inactivity before a
 				 * inactive resource allocation is released */
 	char *job_acct_gather_freq; /* poll frequency for job accounting

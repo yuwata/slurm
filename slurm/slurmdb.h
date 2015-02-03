@@ -200,6 +200,9 @@ typedef enum {
 /* Cluster Combo flags */
 #define CLUSTER_FLAG_CRAY   0x00000500 /* This cluster is a cray.
 					  Combo of CRAY_A | CRAY_N */
+/* SICP Defaults */
+#define SLURMDB_IC_JOB_RETAIN      180 /* If ICJobRetentionTime not set */
+#define SLURMDB_IC_JOB_REC_CHECK    60 /* If ICJobRecCheckTime not set  */
 
 /* Define assoc_mgr_assoc_usage_t below to avoid including
  * extraneous slurmdb headers */

@@ -101,6 +101,7 @@ typedef struct salloc_options {
 	char *job_name;		/* --job-name=,     -J name	*/
 	unsigned int jobid;	/* --jobid=jobid		*/
 	char *dependency;	/* --dependency, -P type:jobid	*/
+	uint8_t sicp_mode;	/* Is this a SICP job???	*/
 	int nice;		/* --nice			*/
 	uint32_t priority;	/* --priority */
 	char *account;		/* --account, -U acct_name	*/

@@ -126,6 +126,8 @@ typedef struct {
 List   job_list = NULL;		/* job_record list */
 time_t last_job_update;		/* time of last update to job records */
 
+extern uint32_t sicp_jobid_start;
+
 /* Local variables */
 static uint32_t highest_prio = 0;
 static uint32_t lowest_prio  = TOP_PRIORITY;
@@ -246,6 +248,8 @@ static int  _write_data_array_to_file(char *file_name, char **data,
 				      uint32_t size);
 static void _xmit_new_end_time(struct job_record *job_ptr);
 static void _kill_dependent(struct job_record *);
+extern int _request_sicp_job_id(void *db_conn, uint32_t *job_id);
+
 
 /*
  * Functions used to manage job array responses with a separate return code
@@ -1210,6 +1214,7 @@ static void _dump_job_state(struct job_record *dump_job_ptr, Buf buffer)
 	}
 	list_iterator_destroy(step_iterator);
 	pack16((uint16_t) 0, buffer);	/* no step flag */
+	pack8(dump_job_ptr->sicp_mode, buffer);
 }
 
 /* Unpack a job's state information from a buffer */
@@ -1258,6 +1263,7 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 	slurmdb_qos_rec_t qos_rec;
 	bool job_finished = false;
 	char jbuf[JBUFSIZ];
+	uint8_t sicp_mode = 0;
 
 	if (protocol_version >= SLURM_15_08_PROTOCOL_VERSION) {
 		safe_unpack32(&array_job_id, buffer);
@@ -1614,6 +1620,7 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 				goto unpack_error;
 			safe_unpack16(&step_flag, buffer);
 		}
+		safe_unpack8(&sicp_mode, buffer);
 	} else if (protocol_version >= SLURM_14_03_PROTOCOL_VERSION) {
 		safe_unpack32(&array_job_id, buffer);
 		safe_unpack32(&array_task_id, buffer);
@@ -1799,8 +1806,18 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 		highest_prio = MAX(highest_prio, priority);
 		lowest_prio  = MIN(lowest_prio,  priority);
 	}
-	if (job_id_sequence <= job_id)
-		job_id_sequence = job_id + 1;
+
+	if (job_id_sequence <= job_id) {
+		/* Only update the job_id_sequence variable IF the job_id in
+		 * question is NOT in the SICP reserve range.
+		 */
+		if (protocol_version >= SLURM_14_11_PROTOCOL_VERSION) {
+			if ( job_id < sicp_jobid_start)
+				job_id_sequence = job_id + 1;
+		} else {
+			job_id_sequence = job_id + 1;
+		}
+	}
 
 	xfree(job_ptr->account);
 	job_ptr->account = account;
@@ -2033,6 +2050,7 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 			job_ptr->qos_id = qos_rec.id;
 	}
 	build_node_details(job_ptr, false);	/* set node_addr */
+	job_ptr->sicp_mode = sicp_mode;
 	return SLURM_SUCCESS;
 
 unpack_error:
@@ -3354,6 +3372,7 @@ void dump_job_desc(job_desc_msg_t * job_specs)
 	debug3("   dependency=%s account=%s qos=%s comment=%s",
 	       job_specs->dependency, job_specs->account,
 	       job_specs->qos, job_specs->comment);
+	debug3("   sicp=%s", job_specs->sicp_mode ? "intercluster" : "normal");
 
 	num_tasks = (job_specs->num_tasks != NO_VAL) ?
 		(long) job_specs->num_tasks : -1L;
@@ -5511,6 +5530,7 @@ static int _job_create(job_desc_msg_t *job_desc, int allocate, int will_run,
 		job_ptr = *job_pptr;
 		goto cleanup_fail;
 	}
+
 	job_ptr = *job_pptr;
 	job_ptr->start_protocol_ver = protocol_version;
 	job_ptr->part_ptr = part_ptr;
@@ -6425,10 +6445,25 @@ _copy_job_desc_to_job_record(job_desc_msg_t * job_desc,
 	}
 
 	job_ptr = _create_job_record(&error_code, 1);
-	if (error_code)
-		return error_code;
+	if (error_code) { /* st on this code is unreachable for now as error_code
+			   * is ALWAYS set to 0 in _create_job_record.
+			   * THEREFORE, take the strategy that at the end of
+			   * this function if we have just created a job_record
+			   * for a job with id of NO_VAL (4294967294) then that
+			   * job should be purged from the queue
+			   */
+		/* Remove the job_record for the job_ptr->job_id job as this was just
+		 * added but there was an error and now we will wind up with a "dummy"
+		 * job.  Perhaps we will only want the SICP jobs to not create this
+		 * but for now, make it all jobs.
+		 */
+		info ("Purging bogus job record with job id: %u", job_ptr->job_id);
+		_purge_job_record(job_ptr->job_id);
+ 		return error_code;
+	}
 
 	*job_rec_ptr = job_ptr;
+	job_ptr->sicp_mode = job_desc->sicp_mode;
 	job_ptr->partition = xstrdup(job_desc->partition);
 	if (job_desc->profile != ACCT_GATHER_PROFILE_NOT_SET)
 		job_ptr->profile = job_desc->profile;
@@ -6437,8 +6472,14 @@ _copy_job_desc_to_job_record(job_desc_msg_t * job_desc,
 		job_ptr->job_id = job_desc->job_id;
 	} else {
 		error_code = _set_job_id(job_ptr);
-		if (error_code)
+		if (error_code) {
+			if ( slurm_get_debug_flags() & DEBUG_FLAG_SICP )
+				info ("SICP--%s--Error in call to _set_job_id. "
+				      " Purging now bogus job record with job "
+				      "id: %u", __FUNCTION__, job_ptr->job_id);
+			_purge_job_record(job_ptr->job_id);
 			return error_code;
+		}
 	}
 
 	if (job_desc->name)
@@ -8689,37 +8730,49 @@ extern uint32_t get_next_job_id(void)
  */
 static int _set_job_id(struct job_record *job_ptr)
 {
-	int i;
+	int i, rc;
 	uint32_t new_id, max_jobs;
 
 	xassert(job_ptr);
 	xassert (job_ptr->magic == JOB_MAGIC);
 
-	job_id_sequence = MAX(job_id_sequence, slurmctld_conf.first_job_id);
-	max_jobs = slurmctld_conf.max_job_id - slurmctld_conf.first_job_id;
+	if ( !job_ptr->sicp_mode ) {
+		job_id_sequence = MAX(job_id_sequence, slurmctld_conf.first_job_id);
+		max_jobs = slurmctld_conf.max_job_id - slurmctld_conf.first_job_id;
 
-	/* Insure no conflict in job id if we roll over 32 bits */
-	for (i = 0; i < max_jobs; i++) {
-		if (++job_id_sequence >= slurmctld_conf.max_job_id)
-			job_id_sequence = slurmctld_conf.first_job_id;
-		new_id = job_id_sequence;
-		if (find_job_record(new_id))
-			continue;
-		if (_dup_job_file_test(new_id))
-			continue;
+		/* Insure no conflict in job id if we roll over 32 bits */
+		for (i = 0; i < max_jobs; i++) {
+			if (++job_id_sequence >= slurmctld_conf.max_job_id)
+				job_id_sequence = slurmctld_conf.first_job_id;
+			new_id = job_id_sequence;
+			if (find_job_record(new_id))
+				continue;
+			if (_dup_job_file_test(new_id))
+				continue;
 
-		job_ptr->job_id = new_id;
-		/* When we get a new job id might as well make sure
-		 * the db_index is 0 since there is no way it will be
-		 * correct otherwise :).
-		 */
-		job_ptr->db_index = 0;
-		return SLURM_SUCCESS;
+			job_ptr->job_id = new_id;
+			/* When we get a new job id might as well make sure
+			 * the db_index is 0 since there is no way it will be
+			 * correct otherwise :).
+			 */
+			job_ptr->db_index = 0;
+			return SLURM_SUCCESS;
+		}
+		error("We have exhausted our supply of valid job id values. "
+		      "FirstJobId=%u MaxJobId=%u", slurmctld_conf.first_job_id,
+		      slurmctld_conf.max_job_id);
+	} else {
+		if ( slurm_get_debug_flags() & DEBUG_FLAG_SICP )
+			info ( "SICP--%s--This is a SICP job!", __FUNCTION__);
+		rc = _request_sicp_job_id(acct_db_conn, &job_ptr->job_id);
+		if ( rc == SLURM_SUCCESS ) return rc;
 	}
-	error("We have exhausted our supply of valid job id values. "
-	      "FirstJobId=%u MaxJobId=%u", slurmctld_conf.first_job_id,
-	      slurmctld_conf.max_job_id);
+
 	job_ptr->job_id = NO_VAL;
+
+	/* Do NOT try again if it is a SICP job. */
+	if (job_ptr->sicp_mode) return EPERM;
+
 	return EAGAIN;
 }
 

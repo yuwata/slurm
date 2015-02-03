@@ -601,6 +601,10 @@ static void _pack_set_debug_level_msg(set_debug_level_msg_t * msg, Buf buffer,
 static int _unpack_set_debug_level_msg(set_debug_level_msg_t ** msg_ptr,
 				       Buf buffer,
 				       uint16_t protocol_version);
+extern void slurmdbd_unpack_grid_table(dbd_grid_table_msg_t **msg,
+				       uint16_t rpc_version, Buf buffer);
+extern void slurmdbd_pack_grid_table(slurmdbd_msg_t *in, uint16_t rpc_version,
+				     Buf buffer);
 
 static void _pack_will_run_response_msg(will_run_response_msg_t *msg, Buf buffer,
 					uint16_t protocol_version);
@@ -1370,6 +1374,10 @@ pack_msg(slurm_msg_t const *msg, Buf buffer)
 	case RESPONSE_CACHE_INFO:
 		_pack_cache_info_msg((slurm_msg_t *) msg, buffer);
 		break;
+	case DBD_GRID_UPDATE_RESPONSE:
+		slurmdbd_pack_grid_table((slurmdbd_msg_t *)msg->data,
+						msg->protocol_version, buffer);
+		break;
 	default:
 		debug("No pack method for msg type %u", msg->msg_type);
 		return EINVAL;
@@ -2030,6 +2038,10 @@ unpack_msg(slurm_msg_t * msg, Buf buffer)
 						    &(msg->data),
 						    buffer,
 						    msg->protocol_version);
+		break;
+	case DBD_GRID_UPDATE_RESPONSE:
+		slurmdbd_unpack_grid_table((dbd_grid_table_msg_t**)&msg->data,
+					   msg->protocol_version, buffer);
 		break;
 	default:
 		debug("No unpack method for msg type %u", msg->msg_type);
@@ -5432,6 +5444,7 @@ _pack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t * build_ptr, Buf buffer,
 
 		pack16(build_ptr->get_env_timeout, buffer);
 		packstr(build_ptr->gres_plugins, buffer);
+		packstr(build_ptr->grid_clusters, buffer);
 		pack16(build_ptr->group_info, buffer);
 
 		pack32(build_ptr->hash_val, buffer);
@@ -5440,6 +5453,7 @@ _pack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t * build_ptr, Buf buffer,
 		pack16(build_ptr->health_check_node_state, buffer);
 		packstr(build_ptr->health_check_program, buffer);
 
+		pack16(build_ptr->ic_mode, buffer);
 		pack16(build_ptr->inactive_limit, buffer);
 
 		packstr(build_ptr->job_acct_gather_freq, buffer);
@@ -6276,6 +6290,8 @@ _unpack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t **build_buffer_ptr,
 		safe_unpack16(&build_ptr->get_env_timeout, buffer);
 		safe_unpackstr_xmalloc(&build_ptr->gres_plugins,
 				       &uint32_tmp, buffer);
+		safe_unpackstr_xmalloc(&build_ptr->grid_clusters,
+				       &uint32_tmp, buffer);
 		safe_unpack16(&build_ptr->group_info, buffer);
 
 		safe_unpack32(&build_ptr->hash_val, buffer);
@@ -6285,6 +6301,7 @@ _unpack_slurm_ctl_conf_msg(slurm_ctl_conf_info_msg_t **build_buffer_ptr,
 		safe_unpackstr_xmalloc(&build_ptr->health_check_program,
 				       &uint32_tmp, buffer);
 
+		safe_unpack16(&build_ptr->ic_mode, buffer);
 		safe_unpack16(&build_ptr->inactive_limit, buffer);
 
 		safe_unpackstr_xmalloc(&build_ptr->job_acct_gather_freq,
@@ -7313,6 +7330,7 @@ _pack_job_desc_msg(job_desc_msg_t * job_desc_ptr, Buf buffer,
 		packstr(job_desc_ptr->qos, buffer);
 
 		pack8(job_desc_ptr->open_mode,   buffer);
+		pack8(job_desc_ptr->sicp_mode,   buffer);
 		pack8(job_desc_ptr->overcommit,  buffer);
 		packstr(job_desc_ptr->acctg_freq, buffer);
 		pack32(job_desc_ptr->num_tasks,  buffer);
@@ -7808,6 +7826,7 @@ _unpack_job_desc_msg(job_desc_msg_t ** job_desc_buffer_ptr, Buf buffer,
 				       buffer);
 
 		safe_unpack8(&job_desc_ptr->open_mode,   buffer);
+		safe_unpack8(&job_desc_ptr->sicp_mode,   buffer);
 		safe_unpack8(&job_desc_ptr->overcommit,  buffer);
 		safe_unpackstr_xmalloc(&job_desc_ptr->acctg_freq,
 				       &uint32_tmp, buffer);

@@ -75,6 +75,10 @@ time_t shutdown_time = 0;		/* when shutdown request arrived */
 List registered_clusters = NULL;
 pthread_mutex_t registered_lock = PTHREAD_MUTEX_INITIALIZER;
 
+cluster_grid_table_entry_t* grid_table = NULL;
+int nGridEntries = 0;
+int mGridEntries = 4; /* Arbitrary initial size. */
+
 /* Local variables */
 static int    dbd_sigarray[] = {	/* blocked signals for this process */
 	SIGINT,  SIGTERM, SIGCHLD, SIGUSR1,
@@ -89,6 +93,7 @@ static pthread_t rpc_handler_thread;	/* thread ID for RPC hander */
 static pthread_t signal_handler_thread;	/* thread ID for signal hander */
 static pthread_t rollup_handler_thread;	/* thread ID for rollup hander */
 static pthread_t commit_handler_thread;	/* thread ID for commit hander */
+static pthread_t sicp_job_rec_mgr_thread; /* thread ID for IC job rec mgr */
 static pthread_mutex_t rollup_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool running_rollup = 0;
 static bool running_commit = 0;
@@ -112,6 +117,8 @@ static void *_signal_handler(void *no_data);
 static void  _update_logging(bool startup);
 static void  _update_nice(void);
 static void  _usage(char *prog_name);
+static void *_sicp_job_rec_mgr (void* no_data);
+extern void _sicp_job_rec_clean();
 
 /* main - slurmctld main function, start various threads and process RPCs */
 int main(int argc, char *argv[])
@@ -125,6 +132,15 @@ int main(int argc, char *argv[])
 	log_init(argv[0], log_opts, LOG_DAEMON, NULL);
 	if (read_slurmdbd_conf())
 		exit(1);
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("SICP--%s--The SICP reserved job ID range begins at "
+		     "%u\nIC Job Record Retention Time is %u\nExpunge "
+		     "Check Frequency is %u seconds", __FUNCTION__,
+		     slurmdbd_conf->sicp_jobid_start,
+		     slurmdbd_conf->sicp_ic_job_retention,
+		     slurmdbd_conf->sicp_ic_job_rec_check);
+
 	_parse_commandline(argc, argv);
 	_update_logging(true);
 	_update_nice();
@@ -140,6 +156,10 @@ int main(int argc, char *argv[])
 	_kill_old_slurmdbd();
 	if (foreground == 0)
 		_daemonize();
+
+	if (grid_table)
+		xfree(grid_table);
+	grid_table = xmalloc(sizeof(cluster_grid_table_entry_t)*mGridEntries);
 
 	/*
 	 * Need to create pidfile here in case we setuid() below
@@ -179,6 +199,15 @@ int main(int argc, char *argv[])
 	slurm_attr_destroy(&thread_attr);
 
 	memset(&assoc_init_arg, 0, sizeof(assoc_init_args_t));
+
+	/* Create a thread to periodically scan the list of IC job records
+	 * to see which can be cleaned (purged)
+	 */
+	slurm_attr_init(&thread_attr);
+	if (pthread_create(&sicp_job_rec_mgr_thread, &thread_attr,
+			   _sicp_job_rec_mgr, NULL))
+		fatal("pthread_create %m");
+	slurm_attr_destroy(&thread_attr);
 
 	/* If we are tacking wckey we need to cache
 	   wckeys, if we aren't only cache the users, qos */
@@ -553,6 +582,34 @@ static void _request_registrations(void *db_conn)
 	list_destroy(cluster_list);
 }
 
+int
+_send_grid_cluster_update(slurmdbd_msg_t* rmsg, char* host, uint16_t port) {
+
+	slurm_addr_t ctld_address;
+	slurm_fd_t fd;
+	int rc = SLURM_SUCCESS;
+
+	slurm_set_addr(&ctld_address, port, host);
+	fd = slurm_open_msg_conn(&ctld_address);
+	if (fd < 0) {
+		rc = SLURM_ERROR;
+	} else {
+		slurm_msg_t out_msg;
+		slurm_msg_t_init(&out_msg);
+		out_msg.msg_type = DBD_GRID_UPDATE_RESPONSE;
+		out_msg.data = rmsg;
+
+		slurm_send_node_msg(fd, &out_msg);
+		/* We probably need to add matching recv_msg function
+		 * for an arbitray fd or should these be fire
+		 * and forget?  For this, that we can probably
+		 * forget about it */
+		slurm_close(fd);
+	}
+	return rc;
+
+}
+
 static void _rollup_handler_cancel()
 {
 	if (running_rollup)
@@ -801,4 +858,42 @@ static void _become_slurm_user(void)
 		fatal("Can not set uid to SlurmUser(%u): %m",
 		      slurmdbd_conf->slurm_user_id);
 	}
+}
+
+static void*
+_sicp_job_rec_mgr (void* no_data) {
+	int pause;
+
+	if ( slurmdbd_conf->sicp_ic_job_rec_check <= 0 ) {
+		info("The time between IC job record expunge checks is only %u."
+		     "  Adjusting to 1 second.",
+		     slurmdbd_conf->sicp_ic_job_rec_check);
+		slurmdbd_conf->sicp_ic_job_rec_check = 1;
+	}
+
+	/* Because this check is outside the infinite loop, if the cutoff
+	 * isn't assigned when the slurmdbd is initially started then this
+	 * thread simply ends.  Afterwards, the values of the various SICP
+	 * settings can be adjusted and go in effect with an
+	 * "sacctmgr reconfig" BUT as this thread will have already been
+	 * gone by such time, the only way to then clean up SICP job records
+	 * is to restart the slurmdbd.
+	 */
+	if ( slurmdbd_conf->sicp_jobid_start != NO_VAL) {
+		while (1) {
+			do {
+				pause =
+				   sleep(slurmdbd_conf->sicp_ic_job_rec_check);
+			} while (pause > 0);
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+				info("SICP--%s--Calling _sicp_job_rec_clean()",
+							__FUNCTION__);
+			_sicp_job_rec_clean();
+		}
+	} else {
+		info ("interClusterJObIdStart is not set!  Therefore, assuming"
+		      "there are no IC job records to expunge.");
+	}
+
+	return NULL;
 }

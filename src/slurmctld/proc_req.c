@@ -191,7 +191,11 @@ inline static void  _slurm_rpc_update_block(slurm_msg_t * msg);
 inline static void  _slurm_rpc_dump_cache(slurm_msg_t * msg);
 inline static void  _update_cred_key(void);
 
+static void _update_clusters_grid_table(dbd_grid_table_msg_t* drtt_loc);
+
 extern diag_stats_t slurmctld_diag_stats;
+
+extern uint32_t sicp_jobid_start;
 
 /*
  * slurmctld_req  - Process an individual RPC request
@@ -563,6 +567,36 @@ void slurmctld_req(slurm_msg_t *msg, connection_arg_t *arg)
 	slurm_mutex_unlock(&rpc_mutex);
 }
 
+static void _update_clusters_grid_table(dbd_grid_table_msg_t* drtt_loc)
+{
+	int ix, jx;
+
+	/* This message also retrieves the starting point of SICP job ids. */
+	sicp_jobid_start = drtt_loc->sicp_jobid_start; /* Assign to slurmctld's
+							  global variable     */
+
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+		info("%s--InterCluster Reserve JobId Range Start: %u",
+			__FUNCTION__, sicp_jobid_start);
+
+	/* Perform update of the actual slurmctld internal cluster table using
+	 * the information from the return message.
+	 */
+
+	for(ix=0; ix<drtt_loc->ngridEntries; ix++) {
+		for(jx = 0; jx < nGridClusters; jx++) {
+			if ( !strcmp(drtt_loc->ranges[ix].clusterName,
+					grid_table[jx].clusterName) ) {
+				grid_table[jx].controlHost =
+					drtt_loc->ranges[ix].controlHost;
+				grid_table[jx].controlPort =
+					drtt_loc->ranges[ix].controlPort;
+			}
+		}
+	}
+
+}
+
 /* These functions prevent certain RPCs from keeping the slurmctld write locks
  * constantly set, which can prevent other RPCs and system functions from being
  * processed. For example, a steady stream of batch submissions can prevent
@@ -665,8 +699,10 @@ static void _fill_ctld_conf(slurm_ctl_conf_t * conf_ptr)
 	conf_ptr->fs_dampening_factor = conf->fs_dampening_factor;
 
 	conf_ptr->gres_plugins        = xstrdup(conf->gres_plugins);
+	conf_ptr->grid_clusters       = xstrdup(conf->grid_clusters);
 	conf_ptr->group_info          = conf->group_info;
 
+	conf_ptr->ic_mode             = conf->ic_mode;
 	conf_ptr->inactive_limit      = conf->inactive_limit;
 
 	conf_ptr->hash_val            = conf->hash_val;
@@ -4020,6 +4056,9 @@ inline static void _slurm_rpc_suspend(slurm_msg_t * msg)
 		break;
 	case RESUME_JOB:
 		op = "resume";
+		break;
+	case DBD_GRID_UPDATE_RESPONSE:
+		_update_clusters_grid_table(msg->data);
 		break;
 	default:
 		op = "unknown";

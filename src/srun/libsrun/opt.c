@@ -199,6 +199,7 @@
 #define LONG_OPT_PROFILE         0x157
 #define LONG_OPT_EXPORT          0x158
 #define LONG_OPT_PRIORITY        0x160
+#define LONG_OPT_SICP            0x161
 
 extern char **environ;
 
@@ -433,6 +434,7 @@ static void _opt_default()
 	opt.jobid    = NO_VAL;
 	opt.jobid_set = false;
 	opt.dependency = NULL;
+	opt.sicp_mode  = 0;
 	opt.account  = NULL;
 	opt.comment  = NULL;
 	opt.qos      = NULL;
@@ -943,6 +945,7 @@ static void _set_options(const int argc, char **argv)
 		{"restart-dir",      required_argument, 0, LONG_OPT_RESTART_DIR},
 		{"resv-ports",       optional_argument, 0, LONG_OPT_RESV_PORTS},
 		{"runjob-opts",      required_argument, 0, LONG_OPT_LAUNCHER_OPTS},
+		{"sicp",             optional_argument, 0, LONG_OPT_SICP},
 		{"signal",	     required_argument, 0, LONG_OPT_SIGNAL},
 		{"slurmd-debug",     required_argument, 0, LONG_OPT_DEBUG_SLURMD},
 		{"sockets-per-node", required_argument, 0, LONG_OPT_SOCKETSPERNODE},
@@ -1411,6 +1414,17 @@ static void _set_options(const int argc, char **argv)
 				      optarg);
 				exit(error_exit);
 			}
+			break;
+		case LONG_OPT_SICP:
+			if (optarg)
+				/* st on Eventually, need to add function to
+				 *       process the value given
+				 *       (e.g. --sicp=simultaneous).  For
+				 *       whenever --sicp is specified, hardcoded
+				 *       1 is the setting */
+				opt.sicp_mode = 1;
+			else
+				opt.sicp_mode = 1;
 			break;
 		case LONG_OPT_MAIL_TYPE:
 			opt.mail_type |= parse_mail_type(optarg);
@@ -2421,6 +2435,7 @@ static void _opt_list(void)
 	info("comment        : %s", opt.comment);
 
 	info("dependency     : %s", opt.dependency);
+	info("sicp_mode      : %s", opt.sicp_mode ? "intercluster" : "normal");
 	if (opt.gres)
 		info("gres           : %s", opt.gres);
 	info("exclusive      : %s", tf_(opt.exclusive));
@@ -2523,7 +2538,7 @@ static void _usage(void)
 "            [--cpu_bind=...] [--mem_bind=...] [--network=type]\n"
 "            [--ntasks-per-node=n] [--ntasks-per-socket=n] [reservation=name]\n"
 "            [--ntasks-per-core=n] [--mem-per-cpu=MB] [--preserve-env]\n"
-"            [--profile=...]\n"
+"            [--profile=...] [--sicp]\n"
 #ifdef HAVE_BG		/* Blue gene specific options */
 #ifdef HAVE_BG_L_P
 "            [--geometry=XxYxZ] "
@@ -2626,6 +2641,8 @@ static void _help(void)
 "  -r, --relative=n            run job step relative to node n of allocation\n"
 "      --restart-dir=dir       directory of checkpoint image files to restart\n"
 "                              from\n"
+"      --sicp                  If specified, signifies job is to receive\n"
+"                              job id from the incluster reserve range.\n"
 "  -s, --share                 share nodes with other jobs\n"
 "  -S, --core-spec=cores       count of reserved cores\n"
 "      --signal=[B:]num[@time] send signal when time limit within time seconds\n"
