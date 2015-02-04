@@ -173,6 +173,7 @@
 #define LONG_OPT_PROFILE         0x144
 #define LONG_OPT_CPU_FREQ        0x145
 #define LONG_OPT_PRIORITY        0x160
+#define LONG_OPT_SICP            0x161
 
 
 /*---- global variables, defined in opt.h ----*/
@@ -322,6 +323,7 @@ static void _opt_default()
 	opt.account  = NULL;
 	opt.comment  = NULL;
 	opt.qos      = NULL;
+	opt.sicp_mode = 0;
 
 	opt.distribution = SLURM_DIST_UNKNOWN;
 	opt.plane_size   = NO_VAL;
@@ -710,8 +712,10 @@ void set_options(const int argc, char **argv)
 		{"ramdisk-image", required_argument, 0, LONG_OPT_RAMDISK_IMAGE},
 		{"reboot",	  no_argument,       0, LONG_OPT_REBOOT},
 		{"reservation",   required_argument, 0, LONG_OPT_RESERVATION},
+		{"sicp",          optional_argument, 0, LONG_OPT_SICP},
 		{"signal",        required_argument, 0, LONG_OPT_SIGNAL},
 		{"sockets-per-node", required_argument, 0, LONG_OPT_SOCKETSPERNODE},
+		{"switches",      required_argument, 0, LONG_OPT_REQ_SWITCH},
 		{"tasks-per-node",  required_argument, 0, LONG_OPT_NTASKSPERNODE},
 		{"time-min",      required_argument, 0, LONG_OPT_TIME_MIN},
 		{"threads-per-core", required_argument, 0, LONG_OPT_THREADSPERCORE},
@@ -719,7 +723,6 @@ void set_options(const int argc, char **argv)
 		{"uid",           required_argument, 0, LONG_OPT_UID},
 		{"wait-all-nodes",required_argument, 0, LONG_OPT_WAIT_ALL_NODES},
 		{"wckey",         required_argument, 0, LONG_OPT_WCKEY},
-		{"switches",      required_argument, 0, LONG_OPT_REQ_SWITCH},
 		{NULL,            0,                 0, 0}
 	};
 	char *opt_string =
@@ -1226,6 +1229,18 @@ void set_options(const int argc, char **argv)
 		case LONG_OPT_BURST_BUFFER:
 			xfree(opt.burst_buffer);
 			opt.burst_buffer = xstrdup(optarg);
+			break;
+		case LONG_OPT_SICP:
+			if (optarg) {
+				/* Eventually, add function to process the value
+				 * given (e.g. --sicp=simultaneous).  For now,
+				 * when --sicp is specified, hardcoded 1 is the
+				 * setting
+				 */
+				opt.sicp_mode = 1;
+			} else {
+				opt.sicp_mode = 1;
+			}
 			break;
 		default:
 			if (spank_process_option(opt_char, optarg) < 0) {
@@ -1801,6 +1816,8 @@ static void _opt_list(void)
 	info("account        : %s", opt.account);
 	info("comment        : %s", opt.comment);
 	info("dependency     : %s", opt.dependency);
+	info("sicp_mode      : %s",
+			opt.sicp_mode ? "intercluster" : "normal");
 	if (opt.gres != NULL)
 		info("gres           : %s", opt.gres);
 	info("network        : %s", opt.network);
@@ -1899,7 +1916,7 @@ static void _usage(void)
 "              [--network=type] [--mem-per-cpu=MB] [--qos=qos]\n"
 "              [--mem_bind=...] [--reservation=name]\n"
 "              [--time-min=minutes] [--gres=list] [--profile=...]\n"
-"              [--cpu-freq=<min[-max[:gov]]>\n"
+"              [--cpu-freq=min[-max[:gov]] [--sicp]\n"
 "              [--switches=max-switches[@max-time-to-wait]]\n"
 "              [--core-spec=cores]  [--reboot] [--bb=burst_buffer_spec]\n"
 "              [executable [args...]]\n");
@@ -1919,7 +1936,7 @@ static void _help(void)
 "      --bb=<spec>             burst buffer specifications\n"
 "  -c, --cpus-per-task=ncpus   number of cpus required per task\n"
 "      --comment=name          arbitrary comment\n"
-"      --cpu-freq=<min[-max[:gov]]> requested cpu frequency (and governor)\n"
+"      --cpu-freq=min[-max[:gov]] requested cpu frequency (and governor)\n"
 "  -d, --dependency=type:jobid defer job until condition on jobid is satisfied\n"
 "  -D, --chdir=path            change working directory\n"
 "      --get-user-env          used by Moab.  See srun man page.\n"
@@ -1952,6 +1969,8 @@ static void _help(void)
 "  -Q, --quiet                 quiet mode (suppress informational messages)\n"
 "      --reboot                reboot compute nodes before starting job\n"
 "  -s, --share                 share nodes with other jobs\n"
+"      --sicp                  If specified, signifies job is to receive\n"
+"                              job id from the incluster reserve range.\n"
 "      --signal=[B:]num[@time] send signal when time limit within time seconds\n"
 "      --switches=max-switches{@max-time-to-wait}\n"
 "                              Optimum switches and max time to wait for optimum\n"

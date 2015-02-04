@@ -8771,7 +8771,8 @@ static int _set_job_id(struct job_record *job_ptr)
 	job_ptr->job_id = NO_VAL;
 
 	/* Do NOT try again if it is a SICP job. */
-	if (job_ptr->sicp_mode) return EPERM;
+	if (job_ptr->sicp_mode)
+		return EPERM;
 
 	return EAGAIN;
 }

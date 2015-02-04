@@ -2931,7 +2931,6 @@ static void _usage(void)
 "              [--jobid=id] [--verbose] [--gid=group] [--uid=user] [-W sec] \n"
 "              [--contiguous] [--mincpus=n] [--mem=MB] [--tmp=MB] [-C list]\n"
 "              [--account=name] [--dependency=type:jobid] [--comment=name]\n"
-"              [--sicp]\n"
 #ifdef HAVE_BG		/* Blue gene specific options */
 #ifdef HAVE_BG_L_P
 "              [--geometry=XxYxZ] "
@@ -2952,7 +2951,7 @@ static void _usage(void)
 "              [--nodefile=file] [--nodelist=hosts] [--exclude=hosts]\n"
 "              [--network=type] [--mem-per-cpu=MB] [--qos=qos] [--gres=list]\n"
 "              [--mem_bind=...] [--reservation=name]\n"
-"              [--cpu-freq=<min[-max[:gov]]>\n"
+"              [--cpu-freq=min[-max[:gov]] [--sicp]\n"
 "              [--switches=max-switches{@max-time-to-wait}]\n"
 "              [--core-spec=cores] [--reboot] [--bb=burst_buffer_spec]\n"
 "              [--array=index_values] [--profile=...] [--ignore-pbs]\n"
@@ -2973,7 +2972,7 @@ static void _help(void)
 "      --begin=time            defer job until HH:MM MM/DD/YY\n"
 "  -c, --cpus-per-task=ncpus   number of cpus required per task\n"
 "      --comment=name          arbitrary comment\n"
-"      --cpu-freq=<min[-max[:gov]]> requested cpu frequency (and governor)\n"
+"      --cpu-freq=min[-max[:gov]] requested cpu frequency (and governor)\n"
 "  -d, --dependency=type:jobid defer job until condition on jobid is satisfied\n"
 "  -D, --workdir=directory     set working directory for batch script\n"
 "  -e, --error=err             file for batch script's standard error\n"
