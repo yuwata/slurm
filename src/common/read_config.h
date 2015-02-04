@@ -287,9 +287,9 @@ typedef struct {
 } config_key_pair_t;
 
 typedef struct {
-	char* clusterName;
-	char* controlHost;
-	uint16_t   controlPort;
+	char* cluster_name;
+	char* control_host;
+	uint16_t   control_port;
 } cluster_grid_table_entry_t;
 
 /* Destroy a front_end record built by slurm_conf_frontend_array() */

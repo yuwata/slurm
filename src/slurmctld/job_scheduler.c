@@ -127,9 +127,6 @@ static int	save_last_part_update = 0;
 
 extern diag_stats_t slurmctld_diag_stats;
 extern uint32_t     sicp_jobid_start;
-extern int          nGridClusters;
-
-extern cluster_grid_table_entry_t* grid_table;
 
 /*
  * _build_user_job_list - build list of jobs for a given user
@@ -2012,15 +2009,15 @@ extern int test_job_dependency(struct job_record *job_ptr)
 		 * If normal job it will have a job_id < sicp_jobid_start
 		 * and will skip block.
 		 * If remote SICP job it will have a job_id >= sicp_jobid_start
-		 *    and the controlHost and controlPort fields will
+		 *    and the control_host and control_port fields will
 		 *    be defined; therefore, it will execute the block of code.
 		 * If local SICP job it will have a job_id >= sicp_jobid_start
-		 *    BUT the controlHost and controlPort fields will
+		 *    BUT the control_host and control_port fields will
 		 *    be UN-defined; therefore, skip the block and process as
 		 *    it traditionally would.
 		 */
-		if ( dep_ptr->job_id >= sicp_jobid_start && dep_ptr->controlHost
-				&& dep_ptr->controlPort) {
+		if (dep_ptr->job_id >= sicp_jobid_start && dep_ptr->control_host
+		    && dep_ptr->control_port) {
 			dummy_job_rec.job_state = get_sicp_job_state(dep_ptr);
 
 			/* Assign next three lines so as to use existing logic
@@ -2485,7 +2482,7 @@ static int _update_sicp_job_dependency(uint16_t depend_type, uint32_t job_id,
 			     " and is not on this system.  Contact slurmdbd "
 			     "for more information", __FUNCTION__, job_id);
 
-		/* Firstly, obtain clusterName (its index) from slurmdbd. */
+		/* Firstly, obtain cluster_name (its index) from slurmdbd. */
 		rc2 = _request_sicp_jobid_cluster_idx(acct_db_conn,
 							job_id, &gtIdx);
 		if(rc2 != SLURM_SUCCESS)
@@ -2496,10 +2493,10 @@ static int _update_sicp_job_dependency(uint16_t depend_type, uint32_t job_id,
 			info("SICP--%s--The cluster index of the target "
 			     "job is: %d", __FUNCTION__, gtIdx);
 
-		/* Secondly, retrieve contact information for this clusterName
+		/* Secondly, retrieve contact information for this cluster_name
 		 * from local grid_table and store it in the depend_spec.
 		 */
-		if (gtIdx < nGridClusters && gtIdx >= 0) {
+		if (gtIdx < grid_table_len && gtIdx >= 0) {
 			dep_ptr = xmalloc(sizeof(struct depend_spec));
 
 			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
@@ -2507,14 +2504,14 @@ static int _update_sicp_job_dependency(uint16_t depend_type, uint32_t job_id,
 				     "index of %d for job id: %u, we have a "
 				     "control host of: %s and control port "
 				     "of: %d", __FUNCTION__, gtIdx,
-				     job_id, grid_table[gtIdx].controlHost,
-				     grid_table[gtIdx].controlPort);
+				     job_id, grid_table[gtIdx].control_host,
+				     grid_table[gtIdx].control_port);
 
 			dep_ptr->depend_type = depend_type;
 			dep_ptr->job_id      = job_id;
-			dep_ptr->controlHost =
-					xstrdup(grid_table[gtIdx].controlHost);
-			dep_ptr->controlPort = grid_table[gtIdx].controlPort;
+			dep_ptr->control_host =
+					xstrdup(grid_table[gtIdx].control_host);
+			dep_ptr->control_port = grid_table[gtIdx].control_port;
 			dep_ptr->job_ptr     = NULL;
 
 			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
@@ -3593,11 +3590,11 @@ disp_dep_spec(struct depend_spec* dep_ptr) {
 		info("dep_ptr->job_ptr EXISTS!");
 	else
 		info("dep_ptr->job_ptr is NULL!");
-	if (dep_ptr->controlHost)
-		info("dep_ptr->controlHost: (%s)", dep_ptr->controlHost);
+	if (dep_ptr->control_host)
+		info("dep_ptr->control_host: (%s)", dep_ptr->control_host);
 	else
-		info("dep_ptr->controlHost is NULL");
-		info("dep_ptr->controlPort: %u",      dep_ptr->controlPort);
+		info("dep_ptr->control_host is NULL");
+		info("dep_ptr->control_port: %u", dep_ptr->control_port);
 	} else
 		info("dep_ptr is NULL!");
 }

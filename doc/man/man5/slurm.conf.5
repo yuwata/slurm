@@ -877,6 +877,12 @@ The slurmctld daemon must be restarted for changes to this parameter to become
 effective.
 
 .TP
+\fBGridClusters\fR
+A comma delimited list of cluster names for which inter\-cluster job
+dependencies are supported.
+Also see the \fBICJobDepCheck\fR and \fBICMode\fR options.
+
+.TP
 \fBGroupUpdateForce\fR
 If set to a non\-zero value, then information about which users are members
 of groups allowed to use a partition will be updated periodically, even when
@@ -943,6 +949,18 @@ on all nodes to minimize its impact upon parallel programs.
 This program is will be killed if it does not terminate normally within
 60 seconds.
 By default, no program will be executed.
+
+.TP
+\fBICJobDepCheck\fR
+Specify the number of seconds between tests for inter\-cluster job dependencies.
+The default value is 65,534 seconds.
+Also see the \fBGridClusters\fR and \fBICMode\fR options.
+
+.TP
+\fBICMode\fR
+Set to a non\-zero value if this cluster supports inter\-cluster job IDs.
+By default, inter\-cluster job IDs will not be supported.
+Also see the \fBGridClusters\fR and \fBICJobDepCheck\fR options.
 
 .TP
 \fBInactiveLimit\fR

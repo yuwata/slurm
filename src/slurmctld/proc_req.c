@@ -576,22 +576,22 @@ static void _update_clusters_grid_table(dbd_grid_table_msg_t* drtt_loc)
 	sicp_jobid_start = drtt_loc->sicp_jobid_start; /* Assign to slurmctld's
 							  global variable     */
 
-	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP) {
 		info("%s--InterCluster Reserve JobId Range Start: %u",
 			__FUNCTION__, sicp_jobid_start);
+	}
 
 	/* Perform update of the actual slurmctld internal cluster table using
 	 * the information from the return message.
 	 */
-
-	for(ix=0; ix<drtt_loc->ngridEntries; ix++) {
-		for(jx = 0; jx < nGridClusters; jx++) {
-			if ( !strcmp(drtt_loc->ranges[ix].clusterName,
-					grid_table[jx].clusterName) ) {
-				grid_table[jx].controlHost =
-					drtt_loc->ranges[ix].controlHost;
-				grid_table[jx].controlPort =
-					drtt_loc->ranges[ix].controlPort;
+	for (ix = 0; ix < drtt_loc->ngridEntries; ix++) {
+		for (jx = 0; jx < grid_table_len; jx++) {
+			if ( !strcmp(drtt_loc->ranges[ix].cluster_name,
+				     grid_table[jx].cluster_name) ) {
+				grid_table[jx].control_host =
+					drtt_loc->ranges[ix].control_host;
+				grid_table[jx].control_port =
+					drtt_loc->ranges[ix].control_port;
 			}
 		}
 	}

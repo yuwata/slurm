@@ -227,7 +227,7 @@ extern bool  slurmctld_init_db;
 extern int   slurmctld_primary;
 
 extern cluster_grid_table_entry_t* grid_table;
-extern int nGridClusters;
+extern int grid_table_len;
 
 /* Buffer size use to print the jobid2str()
  * jobid, taskid and state.
@@ -750,8 +750,8 @@ struct	depend_spec {
 	 * The following fields are for use with SICP jobs (may want to place
 	 * them in a union with job_ptr as that field will be NULL for SICP jobs
 	 */
-	char*           controlHost;    /* Host IP addr of foreign controller */
-	uint16_t        controlPort;    /* Port number of foreign controller  */
+	char*           control_host;	/* Host IP addr of foreign controller */
+	uint16_t        control_port;	/* Port number of foreign controller  */
 };
 
 struct 	step_record {

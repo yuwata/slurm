@@ -2838,9 +2838,9 @@ extern void slurmdbd_free_usage_msg(dbd_usage_msg_t *msg,
 extern void slurmdbd_free_grid_table_msg(dbd_grid_table_msg_t *msg)
 {	int ix;
 	if(msg){
-		for(ix=0; ix<msg->ngridEntries; ix++) {
-			xfree(msg->ranges[ix].clusterName);
-			xfree(msg->ranges[ix].controlHost);
+		for (ix = 0; ix < msg->ngridEntries; ix++) {
+			xfree(msg->ranges[ix].cluster_name);
+			xfree(msg->ranges[ix].control_host);
 		}
 		xfree(msg->ranges);
 		xfree(msg);
@@ -3489,10 +3489,10 @@ slurmdbd_pack_grid_table(slurmdbd_msg_t *in, uint16_t rpc_version, Buf buffer)
 	pack32(msg->sicp_jobid_start, buffer);
 	pack32(msg->ngridEntries, buffer);
 
-        for(ix=0; ix<msg->ngridEntries; ix++) {
-		packstr(msg->ranges[ix].clusterName, buffer);
-		packstr(msg->ranges[ix].controlHost, buffer);
-		pack16 (msg->ranges[ix].controlPort, buffer);
+        for (ix = 0; ix < msg->ngridEntries; ix++) {
+		packstr(msg->ranges[ix].cluster_name, buffer);
+		packstr(msg->ranges[ix].control_host, buffer);
+		pack16 (msg->ranges[ix].control_port, buffer);
 	}
 }
 
@@ -3513,19 +3513,19 @@ slurmdbd_unpack_grid_table(dbd_grid_table_msg_t **msg, uint16_t rpc_version,
 	drtt_loc->ranges = xmalloc(sizeof(cluster_grid_table_entry_t) *
 							drtt_loc->ngridEntries);
 
-	info("%s/%s [%d]--clusterName controlHost controlPort minJobId "
-				"maxJobId", __FILE__, __FUNCTION__, __LINE__);
+	info("%s/%s [%d]--cluster_name control_host control_port minJobId "
+	     "maxJobId", __FILE__, __FUNCTION__, __LINE__);
 
-        for(ix=0; ix<drtt_loc->ngridEntries; ix++) {
-		safe_unpackstr_xmalloc(&drtt_loc->ranges[ix].clusterName,
+        for (ix = 0; ix < drtt_loc->ngridEntries; ix++) {
+		safe_unpackstr_xmalloc(&drtt_loc->ranges[ix].cluster_name,
 						&uint32_tmp, buffer);
-		safe_unpackstr_xmalloc(&drtt_loc->ranges[ix].controlHost,
+		safe_unpackstr_xmalloc(&drtt_loc->ranges[ix].control_host,
 						&uint32_tmp, buffer);
-		safe_unpack16         (&drtt_loc->ranges[ix].controlPort,
+		safe_unpack16         (&drtt_loc->ranges[ix].control_port,
 						buffer);
-		info("\t%s %s %d",      drtt_loc->ranges[ix].clusterName,
-					drtt_loc->ranges[ix].controlHost,
-					drtt_loc->ranges[ix].controlPort);
+		info("\t%s %s %d",      drtt_loc->ranges[ix].cluster_name,
+					drtt_loc->ranges[ix].control_host,
+					drtt_loc->ranges[ix].control_port);
 	}
 
 	*msg = drtt_loc;

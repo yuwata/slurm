@@ -56,6 +56,7 @@
 #include "src/common/daemonize.h"
 #include "src/common/fd.h"
 #include "src/common/log.h"
+#include "src/common/proc_args.h"
 #include "src/common/read_config.h"
 #include "src/common/slurm_accounting_storage.h"
 #include "src/common/slurm_auth.h"
@@ -63,21 +64,20 @@
 #include "src/common/xmalloc.h"
 #include "src/common/xsignal.h"
 #include "src/common/xstring.h"
-#include "src/common/proc_args.h"
 
+#include "src/slurmdbd/backup.h"
+#include "src/slurmdbd/proc_req.h"
 #include "src/slurmdbd/read_config.h"
 #include "src/slurmdbd/rpc_mgr.h"
-#include "src/slurmdbd/proc_req.h"
-#include "src/slurmdbd/backup.h"
 
 /* Global variables */
 time_t shutdown_time = 0;		/* when shutdown request arrived */
 List registered_clusters = NULL;
 pthread_mutex_t registered_lock = PTHREAD_MUTEX_INITIALIZER;
 
-cluster_grid_table_entry_t* grid_table = NULL;
-int nGridEntries = 0;
-int mGridEntries = 4; /* Arbitrary initial size. */
+cluster_grid_table_entry_t *grid_table = NULL;
+int grid_table_used = 0;
+int grid_table_size = 4;	/* Initial size */
 
 /* Local variables */
 static int    dbd_sigarray[] = {	/* blocked signals for this process */
@@ -107,18 +107,17 @@ static void  _init_pidfile(void);
 static void  _kill_old_slurmdbd(void);
 static void  _parse_commandline(int argc, char *argv[]);
 static void  _request_registrations(void *db_conn);
-static void  _rollup_handler_cancel();
+static void  _rollup_handler_cancel(void);
 static void *_rollup_handler(void *no_data);
-static void  _commit_handler_cancel();
+static void  _commit_handler_cancel(void);
 static void *_commit_handler(void *no_data);
 static int   _send_slurmctld_register_req(slurmdb_cluster_rec_t *cluster_rec);
 static void  _set_work_dir(void);
+static void *_sicp_job_rec_mgr(void* no_data);
 static void *_signal_handler(void *no_data);
 static void  _update_logging(bool startup);
 static void  _update_nice(void);
 static void  _usage(char *prog_name);
-static void *_sicp_job_rec_mgr (void* no_data);
-extern void _sicp_job_rec_clean();
 
 /* main - slurmctld main function, start various threads and process RPCs */
 int main(int argc, char *argv[])
@@ -133,13 +132,13 @@ int main(int argc, char *argv[])
 	if (read_slurmdbd_conf())
 		exit(1);
 
-	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
-		info("SICP--%s--The SICP reserved job ID range begins at "
-		     "%u\nIC Job Record Retention Time is %u\nExpunge "
-		     "Check Frequency is %u seconds", __FUNCTION__,
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP) {
+		info("SICP--%s-- ICJobIdStart=%u ICJobRetentionTime=%u "
+		     "ICJobRecCheckTime=%u", __FUNCTION__,
 		     slurmdbd_conf->sicp_jobid_start,
 		     slurmdbd_conf->sicp_ic_job_retention,
 		     slurmdbd_conf->sicp_ic_job_rec_check);
+	}
 
 	_parse_commandline(argc, argv);
 	_update_logging(true);
@@ -157,9 +156,9 @@ int main(int argc, char *argv[])
 	if (foreground == 0)
 		_daemonize();
 
-	if (grid_table)
-		xfree(grid_table);
-	grid_table = xmalloc(sizeof(cluster_grid_table_entry_t)*mGridEntries);
+	xfree(grid_table);
+	grid_table = xmalloc(sizeof(cluster_grid_table_entry_t) *
+			     grid_table_size);
 
 	/*
 	 * Need to create pidfile here in case we setuid() below
@@ -302,6 +301,8 @@ end_it:
 		pthread_join(signal_handler_thread, NULL);
 	if (commit_handler_thread)
 		pthread_join(commit_handler_thread, NULL);
+	if (sicp_job_rec_mgr_thread)
+		pthread_join(sicp_job_rec_mgr_thread, NULL);
 
 	acct_storage_g_commit(db_conn, 1);
 	acct_storage_g_close_connection(&db_conn);
@@ -322,7 +323,7 @@ end_it:
 	exit(0);
 }
 
-extern void reconfig()
+extern void reconfig(void)
 {
 	read_slurmdbd_conf();
 	assoc_mgr_set_missing_uids();
@@ -330,7 +331,7 @@ extern void reconfig()
 	_update_logging(false);
 }
 
-extern void shutdown_threads()
+extern void shutdown_threads(void)
 {
 	shutdown_time = time(NULL);
 	/* End commit before rpc_mgr_wake.  It will do the final
@@ -582,9 +583,9 @@ static void _request_registrations(void *db_conn)
 	list_destroy(cluster_list);
 }
 
-int
-_send_grid_cluster_update(slurmdbd_msg_t* rmsg, char* host, uint16_t port) {
-
+extern int
+send_grid_cluster_update(slurmdbd_msg_t* rmsg, char* host, uint16_t port)
+{
 	slurm_addr_t ctld_address;
 	slurm_fd_t fd;
 	int rc = SLURM_SUCCESS;
@@ -610,7 +611,7 @@ _send_grid_cluster_update(slurmdbd_msg_t* rmsg, char* host, uint16_t port) {
 
 }
 
-static void _rollup_handler_cancel()
+static void _rollup_handler_cancel(void)
 {
 	if (running_rollup)
 		debug("Waiting for rollup thread to finish.");
@@ -677,7 +678,7 @@ static void *_rollup_handler(void *db_conn)
 	return NULL;
 }
 
-static void _commit_handler_cancel()
+static void _commit_handler_cancel(void)
 {
 	if (running_commit)
 		debug("Waiting for commit thread to finish.");
@@ -861,8 +862,9 @@ static void _become_slurm_user(void)
 }
 
 static void*
-_sicp_job_rec_mgr (void* no_data) {
-	int pause;
+_sicp_job_rec_mgr (void* no_data)
+{
+	time_t last_expunge = 0, now;
 
 	if ( slurmdbd_conf->sicp_ic_job_rec_check <= 0 ) {
 		info("The time between IC job record expunge checks is only %u."
@@ -879,20 +881,23 @@ _sicp_job_rec_mgr (void* no_data) {
 	 * gone by such time, the only way to then clean up SICP job records
 	 * is to restart the slurmdbd.
 	 */
-	if ( slurmdbd_conf->sicp_jobid_start != NO_VAL) {
-		while (1) {
-			do {
-				pause =
-				   sleep(slurmdbd_conf->sicp_ic_job_rec_check);
-			} while (pause > 0);
-			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
-				info("SICP--%s--Calling _sicp_job_rec_clean()",
-							__FUNCTION__);
-			_sicp_job_rec_clean();
+	if (slurmdbd_conf->sicp_jobid_start != NO_VAL) {
+		while (!shutdown_time) {
+			sleep(2);
+			now = time(NULL);
+			if (difftime(now, last_expunge) <
+			    slurmdbd_conf->sicp_ic_job_rec_check)
+				continue;
+			last_expunge = now;
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP) {
+				info("SICP--%s--Calling sicp_job_rec_clean()",
+				     __FUNCTION__);
+			}
+			sicp_job_rec_clean();
 		}
 	} else {
-		info ("interClusterJObIdStart is not set!  Therefore, assuming"
-		      "there are no IC job records to expunge.");
+		info ("ICJobIdStart is not set! Assuming no IC job records "
+		      "to expunge");
 	}
 
 	return NULL;

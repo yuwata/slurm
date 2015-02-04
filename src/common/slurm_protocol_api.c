@@ -2697,29 +2697,20 @@ slurm_open_foreign_controller_conn(slurm_addr_t *addr, char* control_host,
 				   uint16_t control_port)
 {
 	slurm_fd_t fd = -1;
-	slurm_protocol_config_t *myproto = NULL;
-	int retry;
-	slurm_addr_t* foreignAddr = xmalloc(sizeof(slurm_addr_t));
+	int retry, timeout = slurm_get_msg_timeout();
 
-	if (!foreignAddr)
-		return SLURM_FAILURE;
-
-	for (retry=0; retry<slurm_get_msg_timeout(); retry++) {
+	slurm_set_addr(addr, control_port, control_host);
+	for (retry = 0; retry < timeout; retry++) {
 		if (retry)
 			sleep(1);
-		slurm_set_addr( foreignAddr, control_port, control_host);
-		addr = foreignAddr;
-
 		fd = slurm_open_msg_conn(addr);
 		if (fd >= 0)
 			goto end_it;
 		debug("Failed to contact foreign controller: %s", control_host);
 	}
-	addr = NULL;
 	slurm_seterrno_ret(SLURMCTLD_COMMUNICATIONS_CONNECTION_ERROR);
 
 end_it:
-	xfree(myproto);
 	return fd;
 }
 
@@ -3884,7 +3875,8 @@ cleanup:
  * RET int		- returns 0 on success, -1 on failure and sets errno
  */
 int slurm_send_recv_foreign_controller_msg(slurm_msg_t *req, slurm_msg_t *resp,
-					char* controlHost, uint16_t controlPort)
+					   char *control_host,
+					   uint16_t control_port)
 {
 	slurm_fd_t fd = -1;
 	int rc = 0;
@@ -3906,8 +3898,10 @@ int slurm_send_recv_foreign_controller_msg(slurm_msg_t *req, slurm_msg_t *resp,
 	if (working_cluster_rec)
 		req->flags |= SLURM_GLOBAL_AUTH_KEY;
 
-	if ((fd = slurm_open_foreign_controller_conn(&ctrl_addr, controlHost,
-							controlPort)) < 0) {
+	bzero(&ctrl_addr, sizeof(slurm_addr_t));
+	fd = slurm_open_foreign_controller_conn(&ctrl_addr, control_host,
+						control_port);
+	if (fd < 0) {
 		rc = -1;
 		goto cleanup;
 	}
@@ -3934,13 +3928,11 @@ int slurm_send_recv_foreign_controller_msg(slurm_msg_t *req, slurm_msg_t *resp,
 		    && (backup_controller_flag)
 		    && (difftime(time(NULL), start_time)
 			< (slurmctld_timeout + (slurmctld_timeout / 2)))) {
-
 			debug("Neither primary nor backup controller "
 			      "responding, sleep and retry");
 			slurm_free_return_code_msg(resp->data);
 			sleep(30);
-			if ((fd = slurm_open_controller_conn(&ctrl_addr))
-			    < 0) {
+			if ((fd = slurm_open_controller_conn(&ctrl_addr)) < 0) {
 				rc = -1;
 			} else {
 				retry = 1;

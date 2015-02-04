@@ -40,12 +40,20 @@
 #ifndef _SLURM_DBD_H
 #define _SLURM_DBD_H
 
+#include "src/common/read_config.h"
+
+extern cluster_grid_table_entry_t *grid_table;
+extern int grid_table_used;
+extern int grid_table_size;
+
 extern time_t shutdown_time;		/* when shutdown request arrived */
 extern pthread_mutex_t registered_lock;
 extern List registered_clusters;
 
-extern void shutdown_threads();
+extern int  send_grid_cluster_update(slurmdbd_msg_t* rmsg, char* host,
+				     uint16_t port);
 
-extern void reconfig();
+extern void shutdown_threads(void);
+extern void reconfig(void);
 
 #endif /* !_SLURM_DBD_H */

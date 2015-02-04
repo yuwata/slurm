@@ -1,4 +1,4 @@
-.TH "slurmdbd.conf" "21" "July 2014" "slurmdbd.conf 14.11" "Slurm configuration file"
+.TH "slurmdbd.conf" "21" "February 2015" "slurmdbd.conf 15.08" "Slurm configuration file"
 .SH "NAME"
 slurmdbd.conf \- Slurm Database Daemon (SlurmDBD) configuration file
 
@@ -245,6 +245,20 @@ Log errors and verbose informational messages and even more debugging messages
 \fBDefaultQOS\fR
 When adding a new cluster this will be used as the qos for the cluster
 unless something is explicitly set by the admin with the create.
+
+.TP
+\fBICJobIdStart\fR
+First job ID to allocate for inter\-cluster jobs.
+
+.TP
+\fBICJobRecCheckTime\fR
+Time between checks for expunging old inter\-cluster job records.
+The default value is 60 seconds.
+
+.TP
+\fBICJobRetentionTime\fR
+Length of time (in seconds) to retain inter\-cluster job records.
+The default value is 180 seconds.
 
 .TP
 \fBLogFile\fR

@@ -203,7 +203,7 @@ static char *	slurm_conf_filename;
 
 /* SICP Information */
 cluster_grid_table_entry_t* grid_table       = NULL;
-int                         nGridClusters    = 0;
+int                         grid_table_len   = 0;
 uint32_t                    sicp_jobid_start = 0;
 
 /*
@@ -2655,17 +2655,17 @@ build_grid_clusters_table() {
 	 * If we reached here, then there is at least one cluster
 	 * name in the list.
 	 */
-	nGridClusters = 1;
+	grid_table_len = 1;
 
 	ptr = grid_clusters_list;
 
 	/* Count the commas to determine how much to increment the count. */
 	while((ptr = strchr(ptr,','))) {
-		++nGridClusters;
+		++grid_table_len;
 		++ptr;
 	}
 
-	grid_table = xmalloc(sizeof(cluster_grid_table_entry_t)*nGridClusters);
+	grid_table = xmalloc(sizeof(cluster_grid_table_entry_t)*grid_table_len);
 
 	names    = xstrdup(grid_clusters_list);
 	one_name = strtok_r(names, ",", &last);
@@ -2677,7 +2677,7 @@ build_grid_clusters_table() {
 				"cluster name: %s", __FUNCTION__,
 				__FILE__, __FUNCTION__, __LINE__, one_name);
 
-		grid_table[ix].clusterName = xstrdup(one_name);
+		grid_table[ix].cluster_name = xstrdup(one_name);
 		one_name = strtok_r(NULL, ",", &last);
 		++ix;
 	}
@@ -2685,7 +2685,7 @@ build_grid_clusters_table() {
 	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
 		info("SICP--%s--FILE: %s, LINE: %d--cluster name: %s, "
 		     "last: %s, count: %d", __FUNCTION__, __FILE__, __LINE__,
-		     one_name, last, nGridClusters);
+		     one_name, last, grid_table_len);
 
 	xfree(names);
 	xfree(grid_clusters_list);
@@ -2694,18 +2694,19 @@ build_grid_clusters_table() {
 #define SAFE_PRINT(str) (str) ? str : "<NULL>"
 
 void
-displayGridClustersTable() {
+displayGridClustersTable(void) {
 	int ix;
 
 	if ( !(slurm_get_debug_flags() & DEBUG_FLAG_SICP) )
 		return;
 
 	info("SICP--%s--Clusters of Grid: ...", __FUNCTION__);
-	for(ix = 0; ix < nGridClusters; ++ix)
+	for (ix = 0; ix < grid_table_len; ++ix) {
 		info("Cluster: %s, Control Host: %s, Control Port: %d",
-			SAFE_PRINT(grid_table[ix].clusterName),
-			SAFE_PRINT(grid_table[ix].controlHost),
-			grid_table[ix].controlPort);
+			SAFE_PRINT(grid_table[ix].cluster_name),
+			SAFE_PRINT(grid_table[ix].control_host),
+			grid_table[ix].control_port);
+	}
 }
 
 static void*

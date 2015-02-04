@@ -73,7 +73,7 @@ static pthread_mutex_t locks_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t locks_cond = PTHREAD_COND_INITIALIZER;
 
 cluster_grid_table_entry_t* grid_table;
-int nGridClusters;
+int grid_table_len;
 
 static int _get_str_inx(char *name)
 {

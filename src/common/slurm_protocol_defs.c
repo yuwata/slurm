@@ -102,7 +102,7 @@ static void  _free_all_reservations(reserve_info_msg_t *msg);
 static void _free_all_step_info (job_step_info_response_msg_t *msg);
 
 int slurm_send_recv_foreign_controller_msg(slurm_msg_t *req, slurm_msg_t *resp,
-				char* controlHost, uint16_t controlPort);
+				char* control_host, uint16_t control_port);
 
 /*
  * slurm_msg_t_init - initialize a slurm message
@@ -3261,11 +3261,11 @@ get_sicp_job_state(struct depend_spec* dep_ptr) {
 
 	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
 		info("SICP--%s--Contacting foreign controller at host %s and "
-			"port: %u", __FUNCTION__, dep_ptr->controlHost,
-			dep_ptr->controlPort);
+			"port: %u", __FUNCTION__, dep_ptr->control_host,
+			dep_ptr->control_port);
 
 	if ( slurm_send_recv_foreign_controller_msg(&req_msg, &resp_msg,
-		dep_ptr->controlHost, dep_ptr->controlPort) < 0) {
+		dep_ptr->control_host, dep_ptr->control_port) < 0) {
 
 		info("Error!  Could NOT receive the SICP job state from the"
 		     " foreign controller.");

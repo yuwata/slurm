@@ -146,9 +146,9 @@ extern int read_slurmdbd_conf(void)
 		{"DebugFlags", S_P_STRING},
 		{"DebugLevel", S_P_STRING},
 		{"DefaultQOS", S_P_STRING},
-		{"ICJobRetentionTime", S_P_UINT32},
+		{"ICJobIdStart", S_P_UINT32},
 		{"ICJobRecCheckTime", S_P_UINT32},
-		{"interClusterJobIdStart", S_P_UINT32},
+		{"ICJobRetentionTime", S_P_UINT32},
 		{"JobPurge", S_P_UINT32},
 		{"LogFile", S_P_STRING},
 		{"LogTimeFormat", S_P_STRING},
@@ -255,19 +255,23 @@ extern int read_slurmdbd_conf(void)
 		}
 
 		s_p_get_uint32(&slurmdbd_conf->sicp_jobid_start,
-					"interClusterJobIdStart", tbl);
+			       "ICJobIdStart", tbl);
 		if (slurmdbd_conf->sicp_jobid_start == 0)
 			slurmdbd_conf->sicp_jobid_start = NO_VAL;
 
 		s_p_get_uint32(&slurmdbd_conf->sicp_ic_job_retention,
-					"ICJobRetentionTime", tbl);
-		if (slurmdbd_conf->sicp_ic_job_retention == 0)
-			slurmdbd_conf->sicp_ic_job_retention = SLURMDB_IC_JOB_RETAIN /*180*/;
+			       "ICJobRetentionTime", tbl);
+		if (slurmdbd_conf->sicp_ic_job_retention == 0) {
+			slurmdbd_conf->sicp_ic_job_retention =
+				SLURMDB_IC_JOB_RETAIN; /* 180 */
+		}
 
 		s_p_get_uint32(&slurmdbd_conf->sicp_ic_job_rec_check,
-					"ICJobRecCheckTime", tbl);
-		if (slurmdbd_conf->sicp_ic_job_rec_check == 0)
-			slurmdbd_conf->sicp_ic_job_rec_check = SLURMDB_IC_JOB_REC_CHECK /*60*/;
+			       "ICJobRecCheckTime", tbl);
+		if (slurmdbd_conf->sicp_ic_job_rec_check == 0) {
+			slurmdbd_conf->sicp_ic_job_rec_check =
+				SLURMDB_IC_JOB_REC_CHECK; /* 60 */
+		}
 
 		s_p_get_string(&slurmdbd_conf->log_file, "LogFile", tbl);
 
@@ -754,9 +758,9 @@ extern List dump_config(void)
 	list_append(my_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("ICJobRetentionTime");
+	key_pair->name = xstrdup("ICJobIdStart");
 	key_pair->value = xmalloc(32);
-	snprintf(key_pair->value, 32, "%u", slurmdbd_conf->sicp_ic_job_retention);
+	snprintf(key_pair->value, 32, "%u", slurmdbd_conf->sicp_jobid_start);
 	list_append(my_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -766,9 +770,9 @@ extern List dump_config(void)
 	list_append(my_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
-	key_pair->name = xstrdup("interClusterJobIdStart");
+	key_pair->name = xstrdup("ICJobRetentionTime");
 	key_pair->value = xmalloc(32);
-	snprintf(key_pair->value, 32, "%u", slurmdbd_conf->sicp_jobid_start);
+	snprintf(key_pair->value, 32, "%u", slurmdbd_conf->sicp_ic_job_retention);
 	list_append(my_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));

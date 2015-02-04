@@ -2876,13 +2876,10 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 	uint16_t uint16_tmp;
 	uint64_t tot_prio_weight;
 
-	if(!s_p_get_boolean((bool *)&conf->ic_mode,
-		"ICMode", hashtbl))
+	if (!s_p_get_uint16(&conf->ic_job_dep_check, "ICJobDepCheck", hashtbl))
+		conf->ic_job_dep_check = (uint16_t) NO_VAL;
+	if (!s_p_get_boolean((bool *)&conf->ic_mode, "ICMode", hashtbl))
 		conf->ic_mode = false;
-
-	if (!s_p_get_uint16(&conf->ic_job_dep_check, "ICJobDepCheck",
-			    hashtbl))
-		conf->ic_job_dep_check = (uint16_t)NO_VAL;
 
 	if (s_p_get_string(&conf->backup_controller, "BackupController",
 			   hashtbl)
@@ -3104,9 +3101,6 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 
 	if (!s_p_get_uint16(&conf->fast_schedule, "FastSchedule", hashtbl))
 		conf->fast_schedule = DEFAULT_FAST_SCHEDULE;
-
-	if (!s_p_get_uint32(&conf->first_job_id, "FirstJobId", hashtbl))
-		conf->first_job_id = DEFAULT_FIRST_JOB_ID;
 
 	s_p_get_string(&conf->gres_plugins, "GresTypes", hashtbl);
 	s_p_get_string(&conf->grid_clusters, "GridClusters", hashtbl);

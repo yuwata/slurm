@@ -57,7 +57,7 @@ typedef struct {
 /* For tracking location and possibly status of SICP jobs */
 typedef struct {
 	uint32_t job_id;
-	char*    clusterName;
+	char*    cluster_name;
 	time_t   completed;
 } sicp_job_info_t;
 
@@ -73,5 +73,9 @@ typedef struct {
 extern int proc_req(slurmdbd_conn_t *slurmdbd_conn, char *msg,
 		    uint32_t msg_size, bool first, Buf *out_buffer,
 		    uint32_t *uid);
+
+/* Purge SICP job records for jobs that completed at least ICJobRetention
+ * seconds ago */
+extern void sicp_job_rec_clean (void);
 
 #endif /* !_PROC_REQ */
