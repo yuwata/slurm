@@ -419,8 +419,8 @@ typedef struct dbd_step_start_msg {
 /* Piggybacking the starting jobid of the reserved SIC jobs range. */
 typedef struct dbd_range_table_msg{
 	uint32_t sicp_jobid_start;
-	uint32_t ngridEntries;
-	cluster_grid_table_entry_t*  ranges;
+	uint32_t grid_table_used;
+	cluster_grid_table_entry_t *ranges;
 } dbd_grid_table_msg_t;
 
 /* flag to let us know if we are running on cache or from the actual

@@ -97,6 +97,7 @@
 #include "src/slurmctld/agent.h"
 #include "src/slurmctld/burst_buffer.h"
 #include "src/slurmctld/front_end.h"
+#include "src/slurmctld/grid.h"
 #include "src/slurmctld/job_scheduler.h"
 #include "src/slurmctld/job_submit.h"
 #include "src/slurmctld/licenses.h"
@@ -246,7 +247,6 @@ static bool         _valid_controller(void);
 static bool         _wait_for_server_thread(void);
 static void         build_grid_clusters_table();
 static void         displayGridClustersTable();
-extern int          _slurmctld_grid_update_request(void *db_conn);
 char *              slurm_get_grid_clusters(void);
 static void *       _sicp_rem_depend_check (void *no_data);
 
@@ -545,17 +545,17 @@ int main(int argc, char *argv[])
 		}
 		slurm_attr_destroy(&thread_attr);
 
-		/* Call to _slurmctld_grid_update_request is placed
+		/* Call to slurmctld_grid_update_request is placed
                  * AFTER the start of the RPC manager as the return message
 		 * will come via the RPC manager.
 		 */
 		if (slurmctld_conf.ic_mode) {
-			_slurmctld_grid_update_request(acct_db_conn);
-			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+			slurmctld_grid_update_request(acct_db_conn);
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP) {
 				info("SICP--%s--Does Grid Table Exist yet? %s",
 				      __FUNCTION__,
 				     (grid_table) ? "YES" : "NO");
-
+			}
 			if ( slurmctld_conf.first_job_id >= sicp_jobid_start ||
 			     slurmctld_conf.max_job_id   >  sicp_jobid_start) {
 				uint32_t tmp32;

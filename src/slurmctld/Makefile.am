@@ -23,6 +23,8 @@ slurmctld_SOURCES =     \
 	front_end.h	\
 	gang.c		\
 	gang.h		\
+	grid.c		\
+	grid.h		\
 	groups.c	\
 	groups.h	\
 	job_mgr.c 	\

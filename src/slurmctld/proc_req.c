@@ -108,17 +108,15 @@ static pthread_mutex_t throttle_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t throttle_cond = PTHREAD_COND_INITIALIZER;
 
 static void         _fill_ctld_conf(slurm_ctl_conf_t * build_ptr);
-static void         _kill_job_on_msg_fail(uint32_t job_id);
+inline static void  _get_sicp_job_state_val(slurm_msg_t *msg);
 static int          _is_prolog_finished(uint32_t job_id);
+static void         _kill_job_on_msg_fail(uint32_t job_id);
 static int 	    _launch_batch_step(job_desc_msg_t *job_desc_msg,
 				       uid_t uid, uint32_t *step_id,
 				       uint16_t protocol_version);
 static int          _make_step_cred(struct step_record *step_rec,
 				    slurm_cred_t **slurm_cred,
 				    uint16_t protocol_version);
-static void         _throttle_fini(int *active_rpc_cnt);
-static void         _throttle_start(int *active_rpc_cnt);
-
 inline static void  _slurm_rpc_accounting_first_reg(slurm_msg_t *msg);
 inline static void  _slurm_rpc_accounting_register_ctld(slurm_msg_t *msg);
 inline static void  _slurm_rpc_accounting_update_msg(slurm_msg_t *msg);
@@ -189,10 +187,10 @@ inline static void  _slurm_rpc_update_node(slurm_msg_t * msg);
 inline static void  _slurm_rpc_update_partition(slurm_msg_t * msg);
 inline static void  _slurm_rpc_update_block(slurm_msg_t * msg);
 inline static void  _slurm_rpc_dump_cache(slurm_msg_t * msg);
+static        void  _throttle_fini(int *active_rpc_cnt);
+static        void  _throttle_start(int *active_rpc_cnt);
+inline static void  _update_clusters_grid_table(dbd_grid_table_msg_t *drtt_loc);
 inline static void  _update_cred_key(void);
-
-static void _update_clusters_grid_table(dbd_grid_table_msg_t* drtt_loc);
-static void _get_sicp_job_state_val(slurm_msg_t* msg);
 
 extern diag_stats_t slurmctld_diag_stats;
 
@@ -568,7 +566,7 @@ void slurmctld_req(slurm_msg_t *msg, connection_arg_t *arg)
 	slurm_mutex_unlock(&rpc_mutex);
 }
 
-static void _update_clusters_grid_table(dbd_grid_table_msg_t* drtt_loc)
+inline static void _update_clusters_grid_table(dbd_grid_table_msg_t* drtt_loc)
 {
 	int ix, jx;
 
@@ -584,7 +582,7 @@ static void _update_clusters_grid_table(dbd_grid_table_msg_t* drtt_loc)
 	/* Perform update of the actual slurmctld internal cluster table using
 	 * the information from the return message.
 	 */
-	for (ix = 0; ix < drtt_loc->ngridEntries; ix++) {
+	for (ix = 0; ix < drtt_loc->grid_table_used; ix++) {
 		for (jx = 0; jx < grid_table_len; jx++) {
 			if ( !strcmp(drtt_loc->ranges[ix].cluster_name,
 				     grid_table[jx].cluster_name) ) {
@@ -595,7 +593,6 @@ static void _update_clusters_grid_table(dbd_grid_table_msg_t* drtt_loc)
 			}
 		}
 	}
-
 }
 
 /* These functions prevent certain RPCs from keeping the slurmctld write locks
@@ -623,7 +620,8 @@ static void _throttle_fini(int *active_rpc_cnt)
 	slurm_mutex_unlock(&throttle_mutex);
 }
 
-static void _get_sicp_job_state_val(slurm_msg_t* msg) {
+inline static void _get_sicp_job_state_val(slurm_msg_t* msg)
+{
 	slurm_msg_t response_msg;
 	uint32_t sicp_jobid;
 	uint16_t sicp_job_state = (uint16_t)NO_VAL;
@@ -655,9 +653,10 @@ static void _get_sicp_job_state_val(slurm_msg_t* msg) {
 
 		slurm_send_node_msg(msg->conn_fd, &response_msg);
 	}
-	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
-		info("%s--sicp_jobid: %u has state of %d", __FUNCTION__,
+	if (slurm_get_debug_flags() & DEBUG_FLAG_SICP) {
+		info("%s--sicp_jobid: %u has state of %u", __FUNCTION__,
 			sicp_jobid, sicp_job_state);
+	}
 
 }
 

@@ -113,8 +113,8 @@ static bool      from_ctld           = 0;
 static bool      need_to_register    = 0;
 
 extern cluster_grid_table_entry_t* grid_table;
-extern int nGridEntries;
-extern int mGridEntries;
+extern int grid_table_used;
+extern int grid_table_size;
 
 static void * _agent(void *x);
 static void   _close_slurmdbd_fd(void);
@@ -870,7 +870,7 @@ extern int unpack_slurmdbd_msg(slurmdbd_msg_t *resp,
 			if ( resp->data ) {
 				safe_unpack32(&rjob_id, buffer);
 			}
-			/* Pass this back to _request_sicp_job_id so that it
+			/* Pass this back to request_sicp_job_id so that it
 			 * could be used in the appropriate spot of the
 			 * controller.
 			 */
@@ -883,7 +883,7 @@ extern int unpack_slurmdbd_msg(slurmdbd_msg_t *resp,
 			if ( resp->data ) {
 				safe_unpack32(&cidx, buffer);
 			}
-			/* Pass this back to _request_sicp_jobid_cluster_idx so
+			/* Pass this back to request_sicp_jobid_cluster_idx so
 			 * that it could be used in the appropriate spot of the
 			 * controller.
 			 */
@@ -2838,7 +2838,7 @@ extern void slurmdbd_free_usage_msg(dbd_usage_msg_t *msg,
 extern void slurmdbd_free_grid_table_msg(dbd_grid_table_msg_t *msg)
 {	int ix;
 	if(msg){
-		for (ix = 0; ix < msg->ngridEntries; ix++) {
+		for (ix = 0; ix < msg->grid_table_used; ix++) {
 			xfree(msg->ranges[ix].cluster_name);
 			xfree(msg->ranges[ix].control_host);
 		}
@@ -3487,9 +3487,9 @@ slurmdbd_pack_grid_table(slurmdbd_msg_t *in, uint16_t rpc_version, Buf buffer)
 
 	pack16(in->msg_type, buffer);
 	pack32(msg->sicp_jobid_start, buffer);
-	pack32(msg->ngridEntries, buffer);
+	pack32(msg->grid_table_used, buffer);
 
-        for (ix = 0; ix < msg->ngridEntries; ix++) {
+        for (ix = 0; ix < msg->grid_table_used; ix++) {
 		packstr(msg->ranges[ix].cluster_name, buffer);
 		packstr(msg->ranges[ix].control_host, buffer);
 		pack16 (msg->ranges[ix].control_port, buffer);
@@ -3503,20 +3503,19 @@ slurmdbd_unpack_grid_table(dbd_grid_table_msg_t **msg, uint16_t rpc_version,
 	uint32_t uint32_tmp;
 	uint16_t msg_type;
 	int ix;
+	dbd_grid_table_msg_t *drtt_loc = xmalloc(sizeof(dbd_grid_table_msg_t));
 
-	dbd_grid_table_msg_t* drtt_loc = xmalloc(sizeof(dbd_grid_table_msg_t));
-	dbd_grid_table_msg_t *msg_ptr = *msg;
 	safe_unpack16(&msg_type, buffer);
 	safe_unpack32(&drtt_loc->sicp_jobid_start, buffer);
-	safe_unpack32(&drtt_loc->ngridEntries, buffer);
+	safe_unpack32(&drtt_loc->grid_table_used, buffer);
 
 	drtt_loc->ranges = xmalloc(sizeof(cluster_grid_table_entry_t) *
-							drtt_loc->ngridEntries);
+				   drtt_loc->grid_table_used);
 
 	info("%s/%s [%d]--cluster_name control_host control_port minJobId "
 	     "maxJobId", __FILE__, __FUNCTION__, __LINE__);
 
-        for (ix = 0; ix < drtt_loc->ngridEntries; ix++) {
+        for (ix = 0; ix < drtt_loc->grid_table_used; ix++) {
 		safe_unpackstr_xmalloc(&drtt_loc->ranges[ix].cluster_name,
 						&uint32_tmp, buffer);
 		safe_unpackstr_xmalloc(&drtt_loc->ranges[ix].control_host,
@@ -3527,13 +3526,12 @@ slurmdbd_unpack_grid_table(dbd_grid_table_msg_t **msg, uint16_t rpc_version,
 					drtt_loc->ranges[ix].control_host,
 					drtt_loc->ranges[ix].control_port);
 	}
-
 	*msg = drtt_loc;
 
 	return;
 
 unpack_error:
-	slurmdbd_free_grid_table_msg(msg_ptr);
+	slurmdbd_free_grid_table_msg(drtt_loc);
 	*msg = NULL;
 	return;
 }

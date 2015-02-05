@@ -72,6 +72,7 @@
 #include "src/slurmctld/agent.h"
 #include "src/slurmctld/burst_buffer.h"
 #include "src/slurmctld/front_end.h"
+#include "src/slurmctld/grid.h"
 #include "src/slurmctld/job_scheduler.h"
 #include "src/slurmctld/licenses.h"
 #include "src/slurmctld/locks.h"
@@ -114,8 +115,6 @@ static int	_valid_feature_list(uint32_t job_id, List feature_list);
 static int	_valid_node_feature(char *feature);
 extern uint16_t get_sicp_job_state(struct depend_spec* dep_ptr);
 void            disp_dep_spec(struct depend_spec* dep_ptr);
-extern int      _request_sicp_jobid_cluster_idx(void *db_conn, uint32_t job_id,
-						int* idx);
 static int      _update_sicp_job_dependency(uint16_t depend_type,
 				uint32_t job_id, List new_depend_list);
 
@@ -2483,9 +2482,9 @@ static int _update_sicp_job_dependency(uint16_t depend_type, uint32_t job_id,
 			     "for more information", __FUNCTION__, job_id);
 
 		/* Firstly, obtain cluster_name (its index) from slurmdbd. */
-		rc2 = _request_sicp_jobid_cluster_idx(acct_db_conn,
+		rc2 = request_sicp_jobid_cluster_idx(acct_db_conn,
 							job_id, &gtIdx);
-		if(rc2 != SLURM_SUCCESS)
+		if (rc2 != SLURM_SUCCESS)
 			info("No record of SICP job id (%u) found on slurmdbd. "
 			     "Must not exist anymore!", job_id);
 

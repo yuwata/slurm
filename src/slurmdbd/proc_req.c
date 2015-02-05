@@ -193,11 +193,6 @@ static int   _step_complete(slurmdbd_conn_t *slurmdbd_conn,
 static int   _step_start(slurmdbd_conn_t *slurmdbd_conn,
 			 Buf in_buffer, Buf *out_buffer, uint32_t *uid);
 
-//FIXME: Need to relocate function and/or definitions
-extern void slurmdbd_pack_grid_table(slurmdbd_msg_t *in, uint16_t rpc_version,
-				     Buf buffer);
-
-
 List sicp_job_list = NULL;
 
 /* Process an incoming RPC
@@ -3748,7 +3743,7 @@ static int  _slurmdbd_grid_table_update(slurmdbd_conn_t *slurmdbd_conn,
 	/* Piggybacking this value as well in the return message. */
 	range_table_msg.sicp_jobid_start = slurmdbd_conf->sicp_jobid_start;
 
-	range_table_msg.ngridEntries     = grid_table_used;
+	range_table_msg.grid_table_used  = grid_table_used;
 	range_table_msg.ranges           = grid_table;
 
 	rmsg.msg_type = DBD_GRID_UPDATE_RESPONSE;

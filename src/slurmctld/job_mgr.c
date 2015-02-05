@@ -85,6 +85,7 @@
 #include "src/slurmctld/agent.h"
 #include "src/slurmctld/burst_buffer.h"
 #include "src/slurmctld/front_end.h"
+#include "src/slurmctld/grid.h"
 #include "src/slurmctld/job_scheduler.h"
 #include "src/slurmctld/job_submit.h"
 #include "src/slurmctld/licenses.h"
@@ -181,6 +182,7 @@ static int  _job_create(job_desc_msg_t * job_specs, int allocate, int will_run,
 			struct job_record **job_rec_ptr, uid_t submit_uid,
 			char **err_msg, uint16_t protocol_version);
 static void _job_timed_out(struct job_record *job_ptr);
+static void _kill_dependent(struct job_record *job_mgr);
 static void _list_delete_job(void *job_entry);
 static int  _list_find_job_id(void *job_entry, void *key);
 static int  _list_find_job_old(void *job_entry, void *key);
@@ -220,7 +222,7 @@ static job_array_resp_msg_t *_resp_array_xlate(resp_array_struct_t *resp,
 					       uint32_t job_id);
 static int  _resume_job_nodes(struct job_record *job_ptr, bool indf_susp);
 static void _send_job_kill(struct job_record *job_ptr);
-static int  _set_job_id(struct job_record *job_ptr);
+static int  _set_job_id(struct job_record *job_ptr, job_desc_msg_t * job_desc);
 static void  _set_job_requeue_exit_value(struct job_record *job_ptr);
 static void _signal_batch_job(struct job_record *job_ptr,
 			      uint16_t signal,
@@ -247,8 +249,6 @@ static int  _write_data_to_file(char *file_name, char *data);
 static int  _write_data_array_to_file(char *file_name, char **data,
 				      uint32_t size);
 static void _xmit_new_end_time(struct job_record *job_ptr);
-static void _kill_dependent(struct job_record *);
-extern int _request_sicp_job_id(void *db_conn, uint32_t *job_id);
 
 
 /*
@@ -3501,7 +3501,7 @@ extern struct job_record *job_array_split(struct job_record *job_ptr)
 
 	_remove_job_hash(job_ptr);
 	job_ptr_pend->job_id = job_ptr->job_id;
-	if (_set_job_id(job_ptr) != SLURM_SUCCESS)
+	if (_set_job_id(job_ptr, NULL) != SLURM_SUCCESS)
 		fatal("%s: _set_job_id error", __func__);
 	if (!job_ptr->array_recs) {
 		fatal("%s: job %u record lacks array structure",
@@ -6471,12 +6471,13 @@ _copy_job_desc_to_job_record(job_desc_msg_t * job_desc,
 	if (job_desc->job_id != NO_VAL) {	/* already confirmed unique */
 		job_ptr->job_id = job_desc->job_id;
 	} else {
-		error_code = _set_job_id(job_ptr);
+		error_code = _set_job_id(job_ptr, job_desc);
 		if (error_code) {
-			if ( slurm_get_debug_flags() & DEBUG_FLAG_SICP )
-				info ("SICP--%s--Error in call to _set_job_id. "
-				      " Purging now bogus job record with job "
-				      "id: %u", __FUNCTION__, job_ptr->job_id);
+			if (slurm_get_debug_flags() & DEBUG_FLAG_SICP) {
+				info("SICP--%s--Error in call to _set_job_id. "
+				     "Purging now bogus job record with job "
+				     "id: %u", __FUNCTION__, job_ptr->job_id);
+			}
 			_purge_job_record(job_ptr->job_id);
 			return error_code;
 		}
@@ -8728,17 +8729,19 @@ extern uint32_t get_next_job_id(void)
  * _set_job_id - set a default job_id, insure that it is unique
  * IN job_ptr - pointer to the job_record
  */
-static int _set_job_id(struct job_record *job_ptr)
+static int _set_job_id(struct job_record *job_ptr, job_desc_msg_t * job_desc)
 {
 	int i, rc;
 	uint32_t new_id, max_jobs;
 
 	xassert(job_ptr);
-	xassert (job_ptr->magic == JOB_MAGIC);
+	xassert(job_ptr->magic == JOB_MAGIC);
 
-	if ( !job_ptr->sicp_mode ) {
-		job_id_sequence = MAX(job_id_sequence, slurmctld_conf.first_job_id);
-		max_jobs = slurmctld_conf.max_job_id - slurmctld_conf.first_job_id;
+	if (!job_ptr->sicp_mode) {
+		job_id_sequence = MAX(job_id_sequence,
+				      slurmctld_conf.first_job_id);
+		max_jobs = slurmctld_conf.max_job_id -
+			   slurmctld_conf.first_job_id;
 
 		/* Insure no conflict in job id if we roll over 32 bits */
 		for (i = 0; i < max_jobs; i++) {
@@ -8761,22 +8764,21 @@ static int _set_job_id(struct job_record *job_ptr)
 		error("We have exhausted our supply of valid job id values. "
 		      "FirstJobId=%u MaxJobId=%u", slurmctld_conf.first_job_id,
 		      slurmctld_conf.max_job_id);
+		job_ptr->job_id = NO_VAL;
+		return EAGAIN;
 	} else {
-		if ( slurm_get_debug_flags() & DEBUG_FLAG_SICP )
-			info ( "SICP--%s--This is a SICP job!", __FUNCTION__);
-		rc = _request_sicp_job_id(acct_db_conn, &job_ptr->job_id);
-		if ( rc == SLURM_SUCCESS ) return rc;
+		if (slurm_get_debug_flags() & DEBUG_FLAG_SICP)
+			info("SICP--%s--This is a SICP job!", __FUNCTION__);
+		if (job_desc && job_desc->array_bitmap) {
+			info("Attempt to submit inter-cluster job array");
+			return ESLURM_INTERCLUSTER_INVALID;
+		}
+		rc = request_sicp_job_id(acct_db_conn, &job_ptr->job_id);
+		if (rc == SLURM_SUCCESS)
+			return rc;
+		return ESLURM_INTERCLUSTER_INVALID;
 	}
-
-	job_ptr->job_id = NO_VAL;
-
-	/* Do NOT try again if it is a SICP job. */
-	if (job_ptr->sicp_mode)
-		return EPERM;
-
-	return EAGAIN;
 }
-
 
 /*
  * set_job_prio - set a default job priority
