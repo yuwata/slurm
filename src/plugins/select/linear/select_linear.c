@@ -3806,7 +3806,7 @@ extern int select_p_step_start(struct step_record *step_ptr)
 	return SLURM_SUCCESS;
 }
 
-extern int select_p_step_finish(struct step_record *step_ptr)
+extern int select_p_step_finish(struct step_record *step_ptr, bool kill_step)
 {
 	return SLURM_SUCCESS;
 }

@@ -70,6 +70,9 @@ documents those changes that are of interest to users and administrators.
     should the tres_alloc_cnt be NULL.
  -- sbatch/salloc - Move nodelist logic before the time min_nodes is used
     so we can set it correctly before tasks are set.
+ -- select/cray - Initiate step node health check at start of step termination
+    rather than after application completely ends so that NHC can capture
+    information about hung (non-killable) processes.
 
 * Changes in Slurm 15.08.4
 ==========================

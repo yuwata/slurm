@@ -2025,7 +2025,7 @@ extern int select_p_step_start(struct step_record *step_ptr)
 	return SLURM_SUCCESS;
 }
 
-extern int select_p_step_finish(struct step_record *step_ptr)
+extern int select_p_step_finish(struct step_record *step_ptr, bool kill_step)
 {
 	bg_record_t *bg_record = NULL;
 	select_jobinfo_t *jobinfo = NULL, *step_jobinfo = NULL;
@@ -2034,6 +2034,8 @@ extern int select_p_step_finish(struct step_record *step_ptr)
 
 	xassert(step_ptr);
 
+	if (kill_step)	/* Do not care if SIGKILL being sent to step */
+		return SLURM_SUCCESS;
 
 	if (IS_JOB_COMPLETING(step_ptr->job_ptr) ||
 	    IS_JOB_FINISHED(step_ptr->job_ptr)) {
