@@ -19420,7 +19420,7 @@ $as_echo "#define SLURM_BIGENDIAN 1" >>confdefs.h
 
 # Check whether --with-json was given.
 if test "${with_json+set}" = set; then :
-  withval=$with_json; x_ac_json_dirs="$withval $x_ac_json_dirs"
+  withval=$with_json; x_ac_json_dirs="$withval"
 fi
 
 
@@ -20294,7 +20294,7 @@ $as_echo "not set" >&6; };
 
 # Check whether --with-ofed was given.
 if test "${with_ofed+set}" = set; then :
-  withval=$with_ofed; _x_ac_ofed_dirs="$withval $_x_ac_ofed_dirs"
+  withval=$with_ofed; _x_ac_ofed_dirs="$withval"
 fi
 
 
@@ -20743,7 +20743,7 @@ $as_echo "#define H5_NO_DEPRECATED_SYMBOLS 1" >>confdefs.h
 
 # Check whether --with-hwloc was given.
 if test "${with_hwloc+set}" = set; then :
-  withval=$with_hwloc; _x_ac_hwloc_dirs="$withval $_x_ac_hwloc_dirs"
+  withval=$with_hwloc; _x_ac_hwloc_dirs="$withval"
 fi
 
 
@@ -20845,7 +20845,7 @@ $as_echo "#define HAVE_HWLOC_PCI 1" >>confdefs.h
 
 # Check whether --with-pmix was given.
 if test "${with_pmix+set}" = set; then :
-  withval=$with_pmix; _x_ac_pmix_dirs="$withval $_x_ac_pmix_dirs"
+  withval=$with_pmix; _x_ac_pmix_dirs="$withval"
 fi
 
 
@@ -20979,7 +20979,7 @@ fi
 
 # Check whether --with-freeipmi was given.
 if test "${with_freeipmi+set}" = set; then :
-  withval=$with_freeipmi; _x_ac_freeipmi_dirs="$withval $_x_ac_freeipmi_dirs"
+  withval=$with_freeipmi; _x_ac_freeipmi_dirs="$withval"
 fi
 
 
@@ -21117,7 +21117,7 @@ fi
 
 # Check whether --with-rrdtool was given.
 if test "${with_rrdtool+set}" = set; then :
-  withval=$with_rrdtool; _x_ac_rrdtool_dirs="$withval $_x_ac_rrdtool_dirs"
+  withval=$with_rrdtool; _x_ac_rrdtool_dirs="$withval"
 else
   with_rrdtool=check
 fi
@@ -23415,7 +23415,7 @@ fi
 
 # Check whether --with-netloc was given.
 if test "${with_netloc+set}" = set; then :
-  withval=$with_netloc; _x_ac_netloc_dirs="$withval $_x_ac_netloc_dirs"
+  withval=$with_netloc; _x_ac_netloc_dirs="$withval"
 fi
 
 
@@ -24053,7 +24053,7 @@ fi
 
 # Check whether --with-munge was given.
 if test "${with_munge+set}" = set; then :
-  withval=$with_munge; _x_ac_munge_dirs="$withval $_x_ac_munge_dirs"
+  withval=$with_munge; _x_ac_munge_dirs="$withval"
 fi
 
 
@@ -24218,7 +24218,7 @@ LIBS="$savedLIBS"
 
 # Check whether --with-blcr was given.
 if test "${with_blcr+set}" = set; then :
-  withval=$with_blcr; _x_ac_blcr_dirs="$withval $_x_ac_blcr_dirs"
+  withval=$with_blcr; _x_ac_blcr_dirs="$withval"
 fi
 
 
