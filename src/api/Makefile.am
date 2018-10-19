@@ -44,12 +44,7 @@ current = $(SLURM_API_CURRENT)
 age     = $(SLURM_API_AGE)
 rev     = $(SLURM_API_REVISION)
 
-lib_LTLIBRARIES = libslurm.la
-
-# The ABI of libslurmfull can easily change from 1 micro version to another.
-# To avoid issue we will install this lib alongside the plugins to protect
-# from version issues.
-pkglib_LTLIBRARIES = libslurmfull.la
+lib_LTLIBRARIES = libslurm.la libslurmfull.la
 
 # BUILT_SOURCES tells automake that when "make" is called, these targets
 # need to be built before anything else.
@@ -137,7 +132,7 @@ libslurmfull_la_SOURCES =
 libslurmfull_la_LIBADD = $(convenience_libs)
 libslurmfull_la_LDFLAGS        = \
         $(LIB_LDFLAGS) \
-	-avoid-version \
+	-release $(SLURM_VERSION_STRING) \
         $(FULL_OTHER_FLAGS)
 
 # This was made so we could export all symbols from libcommon
